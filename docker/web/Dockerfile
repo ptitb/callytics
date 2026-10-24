@@ -24,7 +24,8 @@ RUN npm run build
 
 FROM nginx:alpine
 
-ENV UPLOAD_MAX_MB=100
+ENV UPLOAD_MAX_MB=100 \
+    WEB_BIND_ADDR=127.0.0.1
 
 # The nginx image renders /etc/nginx/templates/*.template with envsubst at start.
 COPY docker/web/nginx.conf /etc/nginx/templates/default.conf.template

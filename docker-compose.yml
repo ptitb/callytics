@@ -44,6 +44,7 @@ services:
       AMI_PASS: ${AMI_PASS:?AMI_PASS is not set in .env}
       ARI_USER: ${ARI_USER:-callytics}
       ARI_PASS: ${ARI_PASS:?ARI_PASS is not set in .env}
+      ARI_BIND_ADDR: ${ARI_BIND_ADDR:-127.0.0.1}
       RTP_PORT_START: ${RTP_PORT_START:-10000}
       RTP_PORT_END: ${RTP_PORT_END:-20000}
     volumes:
@@ -93,6 +94,8 @@ services:
       AMI_PASSWORD: ${AMI_PASS:?AMI_PASS is not set in .env}
       RTP_PORT_START: ${RTP_PORT_START:-10000}
       RTP_PORT_END: ${RTP_PORT_END:-20000}
+      ARI_BIND_ADDR: ${ARI_BIND_ADDR:-127.0.0.1}
+      BACKEND_BIND_ADDR: ${BACKEND_BIND_ADDR:-127.0.0.1}
       HOST_IP: ${HOST_IP:-127.0.0.1}
       SIP_PORT: ${SIP_PORT:-5080}
       DB_HOST: 127.0.0.1
@@ -131,6 +134,7 @@ services:
     environment:
       VITE_DISPLAY_TIMEZONE: ${VITE_DISPLAY_TIMEZONE:-UTC}
       UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-100}
+      WEB_BIND_ADDR: ${WEB_BIND_ADDR:-127.0.0.1}
     volumes:
       - .:/app
       - /app/node_modules

@@ -117,6 +117,7 @@ ask_setting SIP_PORT "SIP port (use another port when this host already runs a P
 ask_setting AMI_PORT "Asterisk AMI port (FreePBX on the same host uses 5038)" "5038"
 ask_setting RTP_PORT_START "First RTP port (FreePBX uses 10000-20000)" "10000"
 ask_setting RTP_PORT_END "Last RTP port" "20000"
+ask_setting WEB_BIND_ADDR "Web UI bind address (127.0.0.1 = only via a reverse proxy on this host, 0.0.0.0 = all interfaces, no authentication!)" "127.0.0.1"
 ask_setting UPLOAD_MAX_MB "Maximum upload size in MB" "100"
 
 if [[ -z "$enable_vpn" ]]; then

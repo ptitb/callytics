@@ -1006,7 +1006,7 @@ export class AsteriskConfigService implements OnModuleInit {
       "[transport-ws]",
       "type = transport",
       "protocol = ws",
-      "bind = 0.0.0.0:8088",
+      `bind = ${process.env.ARI_BIND_ADDR?.trim() || "127.0.0.1"}:8088`,
       ...localNets.map((localNet) => `local_net = ${localNet}`),
       "",
     ].join("\n");

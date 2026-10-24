@@ -30,8 +30,11 @@ async function bootstrap(): Promise<void> {
   app.useStaticAssets(join(process.cwd(), '..', 'storage'), { prefix: '/media/' });
   const port = Number(process.env.BACKEND_PORT || 3001);
 
-  await app.listen(port);
-  AppLogger.event('BackendStarted', { port });
+  // Loopback by default: the web UI has no authentication, so the API must not be reachable from outside.
+  const host = process.env.BACKEND_BIND_ADDR?.trim() || '127.0.0.1';
+
+  await app.listen(port, host);
+  AppLogger.event('BackendStarted', { port, host });
 }
 
 void bootstrap();

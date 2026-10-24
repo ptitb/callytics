@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import JsSIP from 'jssip';
+import { getSipWebSocketUrl } from '../../lib/sipWebSocketUrl';
 import { SearchableSelect, type SearchableSelectOption } from '../common/SearchableSelect';
 import { ErrorMessage } from '../common/ErrorMessage';
 import { getHostConfig, listOperators } from '../../lib/api';
@@ -450,9 +451,7 @@ export function Softphone() {
         WebSocketInterface: new (url: string) => unknown;
         UA: new (config: Record<string, unknown>) => SipUserAgent;
       };
-      const socket = new jssipModule.WebSocketInterface(
-        `ws://${hostConfig.hostIp}:8088/ws`,
-      );
+      const socket = new jssipModule.WebSocketInterface(getSipWebSocketUrl());
       const uri = `sip:${selectedOperator.extension.username}@${hostConfig.hostIp}`;
       const userAgent = new jssipModule.UA({
         sockets: [socket],

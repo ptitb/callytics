@@ -61,6 +61,10 @@ export default defineConfig(({ mode }) => {
           changeOrigin: true,
           ws: true,
         },
+        '/ws': {
+          target: 'ws://127.0.0.1:8088',
+          ws: true,
+        },
         '/media': {
           target: devBackendTarget,
           changeOrigin: true,
