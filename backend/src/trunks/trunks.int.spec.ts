@@ -25,6 +25,26 @@ describe('Trunks API', () => {
     }));
   });
 
+  it('POST /trunks stores inbound IPs and rejects invalid ones', async () => {
+    const app = await getApp();
+    const created = await request(app.getHttpServer())
+      .post('/trunks')
+      .send({ name: 'Whitelist Trunk', host: 'sip.example.com', inboundIps: ['192.0.2.10', ' 198.51.100.0/24 ', '192.0.2.10'] });
+
+    expect(created.status).toBe(201);
+    expect(created.body.data.inboundIps).toEqual(['192.0.2.10', '198.51.100.0/24']);
+
+    const invalid = await request(app.getHttpServer())
+      .post('/trunks')
+      .send({ name: 'Bad Trunk', host: 'sip.example.com', inboundIps: ['192.0.2.300'] });
+    expect(invalid.status).toBe(400);
+
+    const cleared = await request(app.getHttpServer())
+      .put(`/trunks/${created.body.data.id}`)
+      .send({ inboundIps: [] });
+    expect(cleared.body.data.inboundIps).toEqual([]);
+  });
+
   it('GET /trunks returns array including the created trunk', async () => {
     const app = await getApp();
     await request(app.getHttpServer()).post('/trunks').send({ name: 'Listed Trunk', host: '127.0.0.1', port: 5060 });

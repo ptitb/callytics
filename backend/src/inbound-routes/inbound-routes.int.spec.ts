@@ -29,6 +29,23 @@ describe('Inbound routes API', () => {
     return createdFlow.body.data.id;
   }
 
+  it('POST /inbound-routes stores a DID with spaces without the spaces', async () => {
+    const app = await getApp();
+    const flowId = await createFlowId(app);
+
+    const response = await request(app.getHttpServer())
+      .post('/inbound-routes')
+      .send({ did: '+31 970 000 0000', flowId });
+
+    expect(response.status).toBe(201);
+    expect(response.body.data.did).toBe('+319700000000');
+
+    const rejected = await request(app.getHttpServer())
+      .post('/inbound-routes')
+      .send({ did: 'call me', flowId });
+    expect(rejected.status).toBe(400);
+  });
+
   it('POST /inbound-routes creates a route and returns 201 with id, did, flowId', async () => {
     const app = await getApp();
     const flowId = await createFlowId(app);

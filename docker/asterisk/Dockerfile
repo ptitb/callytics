@@ -71,13 +71,6 @@ RUN cd /usr/src && \
     groupadd -f wireshark && \
     (id -u asterisk >/dev/null 2>&1 && usermod -aG wireshark asterisk || true)
 
-RUN cat >> /etc/asterisk/rtp.conf << 'EOF'
-
-[general]
-rtcpstats=yes
-rtcpinterval=5000
-EOF
-
 # Host networking is used, so EXPOSE is documentation only. Ports come from .env.
 EXPOSE 8088
 
