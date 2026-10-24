@@ -51,6 +51,35 @@ describe('ExtensionsPage coverage boost', () => {
     expect(screen.getByText('new extension')).toBeInTheDocument();
   });
 
+  it('says SIP TLS is not configured instead of offering the TLS option', async () => {
+    vi.mocked(api.listExtensions).mockResolvedValue(mockExtensions);
+    vi.mocked(api.getHostConfig).mockResolvedValue({ ...mockHostConfig, sipTls: { enabled: false, hostname: null, port: 5081 } });
+    vi.mocked(api.getVpnRelayStatus).mockResolvedValue(mockRelayInactive);
+    vi.mocked(api.getVpnStatus).mockResolvedValue(mockVpnStatus as Awaited<ReturnType<typeof api.getVpnStatus>>);
+
+    renderWithRouter(<ExtensionsPage />);
+
+    await waitFor(() => expect(screen.getByText('101')).toBeInTheDocument());
+    fireEvent.click(screen.getByRole('button', { name: /add extension/i }));
+
+    expect(screen.getByText(/SIP TLS is not configured on this server/)).toBeInTheDocument();
+  });
+
+  it('shows the TLS provisioning URI for a tls extension when TLS is configured', async () => {
+    vi.mocked(api.listExtensions).mockResolvedValue({
+      data: [{ id: 2, username: '102', password: 'secret', displayName: null, transportType: 'tls' as const, vpnOnly: false, createdAt: new Date().toISOString() }],
+      total: 1,
+    });
+    vi.mocked(api.getHostConfig).mockResolvedValue({ ...mockHostConfig, sipTls: { enabled: true, hostname: 'sip.example.com', port: 5081 } });
+    vi.mocked(api.getVpnRelayStatus).mockResolvedValue(mockRelayInactive);
+    vi.mocked(api.getVpnStatus).mockResolvedValue(mockVpnStatus as Awaited<ReturnType<typeof api.getVpnStatus>>);
+
+    renderWithRouter(<ExtensionsPage />);
+
+    await waitFor(() => expect(screen.getByText('sip:102@sip.example.com:5081;transport=tls')).toBeInTheDocument());
+    expect(screen.getByText('TLS')).toBeInTheDocument();
+  });
+
   it('shows VPN badge when vpnOnly is true', async () => {
     vi.mocked(api.listExtensions).mockResolvedValue(mockExtensions);
     vi.mocked(api.getHostConfig).mockResolvedValue(mockHostConfig);

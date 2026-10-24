@@ -111,6 +111,27 @@ describe("AsteriskConfigService", () => {
     expect(config).toContain("rtcp_mux = yes");
   });
 
+  it("generatePjsipConfig with tls extension binds transport-tls and requires SDES SRTP", () => {
+    const ext = {
+      username: "1234",
+      password: "pwd",
+      transport: "transport-tls",
+      endpointFlags: [
+        "media_encryption = sdes",
+        "media_encryption_optimistic = no",
+        "rtp_symmetric = yes",
+      ],
+    };
+    const config = (service as any).buildExtensionsConfig([ext], null);
+
+    expect(config).toContain("transport = transport-tls");
+    expect(config).toContain("media_encryption = sdes");
+    expect(config).toContain("media_encryption_optimistic = no");
+    expect(config).toContain("force_rport = yes");
+    expect(config).toContain("rewrite_contact = yes");
+    expect(config).not.toContain("media_encryption = dtls");
+  });
+
   it("generatePjsipConfig with empty list returns only the global transport section", () => {
     const config = (service as any).buildExtensionsConfig([], null);
     expect(config.trim()).toBe(

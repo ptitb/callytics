@@ -163,7 +163,7 @@ export default async function migrate(): Promise<void> {
 
   await pool.query(`ALTER TABLE IF EXISTS sip_extensions ADD COLUMN IF NOT EXISTS transport_type VARCHAR(20) NOT NULL DEFAULT 'sip'`).catch(() => undefined);
   await pool.query(`ALTER TABLE IF EXISTS sip_extensions DROP CONSTRAINT IF EXISTS sip_extensions_transport_type_check`).catch(() => undefined);
-  await pool.query(`ALTER TABLE IF EXISTS sip_extensions ADD CONSTRAINT sip_extensions_transport_type_check CHECK (transport_type IN ('sip', 'webrtc'))`).catch(() => undefined);
+  await pool.query(`ALTER TABLE IF EXISTS sip_extensions ADD CONSTRAINT sip_extensions_transport_type_check CHECK (transport_type IN ('sip', 'webrtc', 'tls'))`).catch(() => undefined);
   await pool.query(`
     CREATE TABLE IF NOT EXISTS contact_numbers (
       id         SERIAL PRIMARY KEY,

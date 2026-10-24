@@ -1,4 +1,5 @@
 import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+import { ExtensionTransportType } from '../extension-transport';
 
 @Entity({ name: 'sip_extensions' })
 export class SipExtensionEntity {
@@ -15,7 +16,7 @@ export class SipExtensionEntity {
   displayName!: string | null;
 
   @Column({ name: 'transport_type', type: 'varchar', length: 20, default: 'sip' })
-  transportType!: 'sip' | 'webrtc';
+  transportType!: ExtensionTransportType;
 
   @Column({ name: 'vpn_only', type: 'boolean', default: false })
   vpnOnly!: boolean;

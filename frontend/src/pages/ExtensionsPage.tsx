@@ -7,19 +7,20 @@ import { SearchableSelect } from '../components/common/SearchableSelect';
 import { SkeletonRow } from '../components/common/skeleton';
 import { ConfirmDialog } from '../components/ConfirmDialog/ConfirmDialog';
 import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
+import type { SipTlsStatus } from '../lib/api';
 import { createExtension, deleteExtension, getExtensionQrContent, getHostConfig, getVpnRelayConfig, getVpnRelayStatus, getVpnStatus, listExtensions, updateExtension } from '../lib/api';
 import { getApiError } from '../lib/apiError';
 import { formatDateTime } from '../lib/time';
 import { useWindowWidth } from '../hooks/useWindowWidth';
 import { useToast } from '../context/ToastContext';
-import type { ExtensionItem } from '../types';
+import type { ExtensionItem, ExtensionTransportType } from '../types';
 import styles from './ExtensionsPage.module.css';
 
 interface ExtensionFormState {
   username: string;
   password: string;
   displayName: string;
-  transportType: 'sip' | 'webrtc';
+  transportType: ExtensionTransportType;
   vpnOnly: boolean;
 }
 
@@ -34,6 +35,13 @@ const TRANSPORT_OPTIONS = [
   { value: 'sip', label: 'SIP / UDP' },
   { value: 'webrtc', label: 'WebRTC / WSS' },
 ];
+const TLS_TRANSPORT_OPTION = { value: 'tls', label: 'SIP / TLS + SRTP' };
+const TLS_NOT_CONFIGURED_HINT = 'SIP TLS is not configured on this server. Set SIP_TLS_CERT_DIR and SIP_TLS_HOSTNAME in .env and restart Asterisk to offer TLS extensions.';
+const TRANSPORT_BADGES: Record<ExtensionTransportType, string> = { sip: 'SIP', webrtc: 'WebRTC', tls: 'TLS' };
+
+function toTransportType(value: string | null): ExtensionTransportType {
+  return value === 'webrtc' || value === 'tls' ? value : 'sip';
+}
 const EXTENSION_DID_CONFLICT_MESSAGE = 'This number is already in use as an inbound DID. Choose a different extension number.';
 
 export function ExtensionsPage() {
@@ -52,6 +60,7 @@ export function ExtensionsPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [qrModal, setQrModal] = useState<{ username: string; uri: string; dataUrl: string } | null>(null);
   const [hostIp, setHostIp] = useState('127.0.0.1');
+  const [sipTls, setSipTls] = useState<SipTlsStatus | null>(null);
   const [relayHostIp, setRelayHostIp] = useState<string | null>(null);
   const [relayActive, setRelayActive] = useState(false);
   const [vpnInstalled, setVpnInstalled] = useState(false);
@@ -69,7 +78,15 @@ export function ExtensionsPage() {
   const totalPages = Math.max(1, Math.ceil(total / limit));
   const sortedItems = useMemo(() => [...items].sort((a, b) => a.username.localeCompare(b.username)), [items]);
 
-  function buildSipUri(username: string, transportType: 'sip' | 'webrtc'): string {
+  // The TLS option is only offered when configured, except to keep an existing TLS extension editable.
+  function transportOptions(currentValue: ExtensionTransportType) {
+    return sipTls?.enabled || currentValue === 'tls' ? [...TRANSPORT_OPTIONS, TLS_TRANSPORT_OPTION] : TRANSPORT_OPTIONS;
+  }
+
+  function buildSipUri(username: string, transportType: ExtensionTransportType): string {
+    if (transportType === 'tls') {
+      return `sip:${username}@${sipTls?.hostname || hostIp}:${sipTls?.port ?? 5081};transport=tls`;
+    }
     const endpointHost = relayActive && relayHostIp ? relayHostIp : hostIp;
     if (transportType === 'webrtc') {
       return `sip:${username}@${endpointHost}`;
@@ -91,6 +108,7 @@ export function ExtensionsPage() {
       setItems(extensionsResponse.data);
       setTotal(extensionsResponse.total);
       setHostIp(hostConfig.hostIp);
+      setSipTls(hostConfig.sipTls ?? null);
       setVpnInstalled(vpnStatus.installed);
       setRelayActive(relayStatus.active);
       setRelayHostIp(relayStatus.active ? relayConfig?.vpsPublicIp || null : null);
@@ -295,14 +313,15 @@ export function ExtensionsPage() {
               <label className={styles.field}>
                 <span className={styles.fieldLabel}>transport</span>
                 <SearchableSelect
-                  options={TRANSPORT_OPTIONS}
+                  options={transportOptions(createForm.transportType)}
                   value={createForm.transportType}
                   onChange={(value) => {
                     resetMessages();
-                    setCreateForm((current) => ({ ...current, transportType: value === 'webrtc' ? 'webrtc' : 'sip' }));
+                    setCreateForm((current) => ({ ...current, transportType: toTransportType(value) }));
                   }}
                   placeholder="select transport"
                 />
+                {sipTls?.enabled ? null : <span className={styles.toggleSubLabel}>{TLS_NOT_CONFIGURED_HINT}</span>}
               </label>
               <div className={styles.formActions}>
                 <button className={`${styles.primaryButton} btn-press`} type="button" onClick={() => void handleCreate()} disabled={busyKey === 'create'}>{busyKey === 'create' ? 'saving…' : 'save extension'}</button>
@@ -364,7 +383,7 @@ export function ExtensionsPage() {
                       <td className={styles.dataMono}>{item.username}</td>
                       <td className={styles.displayName}>{item.displayName || '—'}</td>
                       <td>
-                        <span className={styles.transportBadge}>{item.transportType === 'webrtc' ? 'WebRTC' : 'SIP'}</span>
+                        <span className={styles.transportBadge}>{TRANSPORT_BADGES[item.transportType] ?? 'SIP'}</span>
                       </td>
                       <td className={styles.vpnOnlyCell}>
                         {item.vpnOnly ? <span className={styles.vpnOnlyBadge}>VPN Only</span> : <span className={styles.vpnOnlyDash}>—</span>}
@@ -417,14 +436,15 @@ export function ExtensionsPage() {
                             <label className={styles.field}>
                               <span className={styles.fieldLabel}>transport</span>
                               <SearchableSelect
-                                options={TRANSPORT_OPTIONS}
+                                options={transportOptions(editForm.transportType)}
                                 value={editForm.transportType}
                                 onChange={(value) => {
                                   resetMessages();
-                                  setEditForm((current) => ({ ...current, transportType: value === 'webrtc' ? 'webrtc' : 'sip' }));
+                                  setEditForm((current) => ({ ...current, transportType: toTransportType(value) }));
                                 }}
                                 placeholder="select transport"
                               />
+                              {sipTls?.enabled ? null : <span className={styles.toggleSubLabel}>{TLS_NOT_CONFIGURED_HINT}</span>}
                             </label>
                             <div className={styles.vpnToggleField}>
                               <div>

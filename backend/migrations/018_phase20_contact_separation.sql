@@ -9,7 +9,7 @@ DROP CONSTRAINT IF EXISTS sip_extensions_transport_type_check;
 
 ALTER TABLE sip_extensions
 ADD CONSTRAINT sip_extensions_transport_type_check
-CHECK (transport_type IN ('sip', 'webrtc'));
+CHECK (transport_type IN ('sip', 'webrtc', 'tls'));
 
 -- Create contact_numbers table for PSTN dial targets
 CREATE TABLE IF NOT EXISTS contact_numbers (

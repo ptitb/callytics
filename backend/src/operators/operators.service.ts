@@ -12,6 +12,7 @@ import { isValidPhoneNumber, parsePhoneNumber } from 'libphonenumber-js';
 import { createClient, RedisClientType } from 'redis';
 import { DataSource, Repository } from 'typeorm';
 import { runSqlMigrations } from '../db/run-sql-migrations';
+import { ExtensionTransportType, normalizeTransportType } from '../extensions/extension-transport';
 import { AppLogger } from '../logger/app-logger';
 import { CreateOperatorDto } from './dto/create-operator.dto';
 import { UpdateOperatorDto } from './dto/update-operator.dto';
@@ -23,7 +24,7 @@ export interface OperatorExtensionResponse {
   id: number;
   username: string;
   password: string;
-  transportType: 'sip' | 'webrtc';
+  transportType: ExtensionTransportType;
 }
 
 export interface OperatorContactNumberResponse {
@@ -449,7 +450,7 @@ export class OperatorsService implements OnModuleInit, OnModuleDestroy {
             id: Number(row.extension_id),
             username: String(row.extension_username),
             password: String(row.extension_password),
-            transportType: row.extension_transport_type === 'webrtc' ? 'webrtc' : 'sip',
+            transportType: normalizeTransportType(row.extension_transport_type as string | null),
           }
         : null,
       contactNumber: row.contact_id

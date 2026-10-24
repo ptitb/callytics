@@ -435,12 +435,14 @@ export interface ContactNumber {
   createdAt: string;
 }
 
+export type ExtensionTransportType = 'sip' | 'webrtc' | 'tls';
+
 export interface ExtensionItem {
   id: number;
   username: string;
   password: string;
   displayName: string | null;
-  transportType: 'sip' | 'webrtc';
+  transportType: ExtensionTransportType;
   vpnOnly: boolean;
   createdAt: string;
 }

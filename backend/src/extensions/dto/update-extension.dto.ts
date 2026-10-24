@@ -1,4 +1,5 @@
 import { IsBoolean, IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import { EXTENSION_TRANSPORT_TYPES, ExtensionTransportType } from '../extension-transport';
 
 export class UpdateExtensionDto {
   @IsOptional()
@@ -18,8 +19,8 @@ export class UpdateExtensionDto {
 
   @IsOptional()
   @IsString()
-  @IsIn(['sip', 'webrtc'])
-  transportType?: 'sip' | 'webrtc';
+  @IsIn(EXTENSION_TRANSPORT_TYPES)
+  transportType?: ExtensionTransportType;
 
   @IsOptional()
   @IsBoolean()

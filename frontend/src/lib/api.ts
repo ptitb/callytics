@@ -53,6 +53,7 @@ import type {
   VpnPeer,
   VpnStatus,
   WebhookDeliveryItem,
+  ExtensionTransportType,
 } from '../types';
 import { getApiBaseUrl } from './backendBaseUrl';
 
@@ -160,9 +161,16 @@ export interface DetailResponse<T> {
   data: T;
 }
 
+export interface SipTlsStatus {
+  enabled: boolean;
+  hostname: string | null;
+  port: number;
+}
+
 export interface HostConfigResponse {
   hostIp: string;
   sipPort: number;
+  sipTls?: SipTlsStatus;
 }
 
 export async function listFlows(page = 1, limit = 5): Promise<PaginatedResponse<FlowSummary>> {
@@ -300,7 +308,7 @@ export async function listExtensions(limit = 20, offset = 0): Promise<ListRespon
   };
 }
 
-export async function createExtension(payload: { username: string; password: string; displayName?: string; transportType?: 'sip' | 'webrtc'; transport_type?: 'sip' | 'webrtc'; vpnOnly?: boolean }): Promise<DetailResponse<ExtensionItem>> {
+export async function createExtension(payload: { username: string; password: string; displayName?: string; transportType?: ExtensionTransportType; transport_type?: ExtensionTransportType; vpnOnly?: boolean }): Promise<DetailResponse<ExtensionItem>> {
   const response = await api.post<DetailResponse<ExtensionItem>>('/extensions', payload);
   return {
     ...response.data,
@@ -312,7 +320,7 @@ export async function createExtension(payload: { username: string; password: str
   };
 }
 
-export async function updateExtension(id: number, payload: { username?: string; password?: string; displayName?: string; transportType?: 'sip' | 'webrtc'; transport_type?: 'sip' | 'webrtc'; vpnOnly?: boolean }): Promise<DetailResponse<ExtensionItem>> {
+export async function updateExtension(id: number, payload: { username?: string; password?: string; displayName?: string; transportType?: ExtensionTransportType; transport_type?: ExtensionTransportType; vpnOnly?: boolean }): Promise<DetailResponse<ExtensionItem>> {
   const response = await api.put<DetailResponse<ExtensionItem>>(`/extensions/${id}`, payload);
   return {
     ...response.data,

@@ -19,6 +19,7 @@ import { InboundRouteEntity } from '../inbound-routes/entities/inbound-route.ent
 import { AppLogger } from '../logger/app-logger';
 import { SipTrunkEntity } from '../trunks/entities/sip-trunk.entity';
 import type { UpdateBackupConfigDto } from './dto/update-backup-config.dto';
+import { asteriskTransportName, normalizeTransportType, TLS_ENDPOINT_FLAGS } from '../extensions/extension-transport';
 import { BackupGateway } from './backup.gateway';
 import { BackupConfigEntity } from './entities/backup-config.entity';
 import { BackupHistoryEntity } from './entities/backup-history.entity';
@@ -323,7 +324,8 @@ export class BackupService implements OnModuleInit {
   }
 
   private resolveExtensionConfig(extension: SipExtensionEntity): ResolvedExtensionConfig {
-    const transportType = extension.transportType === 'webrtc' ? 'webrtc' : 'sip';
+    const transportType = normalizeTransportType(extension.transportType);
+    const transport = asteriskTransportName(transportType);
     const endpointFlags = transportType === 'webrtc'
       ? [
           'dtls_auto_generate_cert = yes',
@@ -332,13 +334,15 @@ export class BackupService implements OnModuleInit {
           'ice_support = yes',
           'media_use_received_transport = yes',
         ]
-      : [];
+      : transportType === 'tls'
+        ? [...TLS_ENDPOINT_FLAGS]
+        : [];
 
     if (extension.vpnOnly) {
       return {
         username: extension.username,
         password: extension.password,
-        transport: transportType === 'webrtc' ? 'transport-ws' : 'transport-udp',
+        transport,
         endpointFlags: [
           ...endpointFlags,
           `acl = ${this.vpnAclName(extension.username)}`,
@@ -350,7 +354,7 @@ export class BackupService implements OnModuleInit {
     return {
       username: extension.username,
       password: extension.password,
-      transport: transportType === 'webrtc' ? 'transport-ws' : 'transport-udp',
+      transport,
       endpointFlags,
     };
   }

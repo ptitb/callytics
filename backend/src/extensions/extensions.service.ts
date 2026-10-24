@@ -10,7 +10,10 @@ import { VpnService } from '../vpn/vpn.service';
 import { CreateExtensionDto } from './dto/create-extension.dto';
 import { UpdateExtensionDto } from './dto/update-extension.dto';
 import { SipExtensionEntity } from './entities/sip-extension.entity';
+import { asteriskTransportName, ExtensionTransportType, normalizeTransportType, TLS_ENDPOINT_FLAGS } from './extension-transport';
+import { getSipTlsStatus } from '../config/sip-tls';
 
+const SIP_TLS_DISABLED_MESSAGE = 'SIP TLS is not enabled. Set SIP_TLS_CERT_DIR and SIP_TLS_HOSTNAME in .env, make sure the certificate exists and restart Asterisk.';
 const EXTENSION_DID_CONFLICT_MESSAGE = 'This number is already in use as an inbound DID. Choose a different extension number.';
 
 export interface ExtensionResponse {
@@ -18,7 +21,7 @@ export interface ExtensionResponse {
   username: string;
   password: string;
   displayName: string | null;
-  transportType: 'sip' | 'webrtc';
+  transportType: ExtensionTransportType;
   vpnOnly: boolean;
   createdAt: string;
 }
@@ -67,6 +70,9 @@ export class ExtensionsService implements OnModuleInit {
     const username = this.normalizeRequired(dto.username, 'username');
     const password = this.normalizeRequired(dto.password, 'password');
     const vpnOnly = Boolean(dto.vpnOnly);
+    if (dto.transportType === 'tls') {
+      await this.ensureSipTlsEnabled();
+    }
     const existing = await this.extensionsRepository.findOne({ where: { username } });
     if (existing) {
       throw new BadRequestException(`Extension username ${username} already exists`);
@@ -118,6 +124,9 @@ export class ExtensionsService implements OnModuleInit {
     }
 
     if (dto.transportType !== undefined) {
+      if (dto.transportType === 'tls' && entity.transportType !== 'tls') {
+        await this.ensureSipTlsEnabled();
+      }
       entity.transportType = dto.transportType;
     }
 
@@ -155,6 +164,14 @@ export class ExtensionsService implements OnModuleInit {
     if (extension.transportType === 'webrtc') {
       return { data: { content: 'Use the browser softphone to register this extension' } };
     }
+    if (extension.transportType === 'tls') {
+      const tls = await getSipTlsStatus();
+      if (!tls.enabled || !tls.hostname) {
+        throw new BadRequestException(SIP_TLS_DISABLED_MESSAGE);
+      }
+      const tlsContent = `sip:${extension.username}@${tls.hostname}:${tls.port};transport=tls\npassword:${extension.password}\ntransport:tls`;
+      return { data: { content: tlsContent } };
+    }
     const hostIp = process.env.HOST_IP || '127.0.0.1';
     const content = `sip:${extension.username}@${hostIp}:${process.env.SIP_PORT || 5080}\npassword:${extension.password}\ntransport:udp`;
     return { data: { content } };
@@ -168,24 +185,15 @@ export class ExtensionsService implements OnModuleInit {
   }
 
   private resolveAsteriskConfig(extension: SipExtensionEntity): ResolvedExtensionConfig {
-    const transportType = extension.transportType === 'webrtc' ? 'webrtc' : 'sip';
-    const endpointFlags = transportType === 'webrtc'
-      ? [
-          'webrtc = yes',
-          'dtls_auto_generate_cert = yes',
-          'use_avpf = yes',
-          'media_encryption = dtls',
-          'ice_support = yes',
-          'media_use_received_transport = yes',
-          'rtcp_mux = yes',
-        ]
-      : [];
+    const transportType = normalizeTransportType(extension.transportType);
+    const transport = asteriskTransportName(transportType);
+    const endpointFlags = this.transportEndpointFlags(transportType);
 
     if (extension.vpnOnly) {
       return {
         username: extension.username,
         password: extension.password,
-        transport: transportType === 'webrtc' ? 'transport-ws' : 'transport-udp',
+        transport,
         endpointFlags: [
           ...endpointFlags,
           `acl = ${this.vpnAclName(extension.username)}`,
@@ -196,9 +204,34 @@ export class ExtensionsService implements OnModuleInit {
     return {
       username: extension.username,
       password: extension.password,
-      transport: transportType === 'webrtc' ? 'transport-ws' : 'transport-udp',
+      transport,
       endpointFlags,
     };
+  }
+
+  private transportEndpointFlags(transportType: ExtensionTransportType): string[] {
+    if (transportType === 'webrtc') {
+      return [
+        'webrtc = yes',
+        'dtls_auto_generate_cert = yes',
+        'use_avpf = yes',
+        'media_encryption = dtls',
+        'ice_support = yes',
+        'media_use_received_transport = yes',
+        'rtcp_mux = yes',
+      ];
+    }
+    if (transportType === 'tls') {
+      return [...TLS_ENDPOINT_FLAGS];
+    }
+    return [];
+  }
+
+  private async ensureSipTlsEnabled(): Promise<void> {
+    const tls = await getSipTlsStatus();
+    if (!tls.enabled) {
+      throw new BadRequestException(SIP_TLS_DISABLED_MESSAGE);
+    }
   }
 
   private toResponse(item: SipExtensionEntity): ExtensionResponse {
@@ -207,7 +240,7 @@ export class ExtensionsService implements OnModuleInit {
       username: item.username,
       password: item.password,
       displayName: item.displayName,
-      transportType: item.transportType || 'sip',
+      transportType: normalizeTransportType(item.transportType),
       vpnOnly: Boolean(item.vpnOnly),
       createdAt: item.createdAt.toISOString(),
     };

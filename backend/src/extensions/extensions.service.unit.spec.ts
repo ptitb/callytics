@@ -6,6 +6,9 @@ import { SipExtensionEntity } from './entities/sip-extension.entity';
 import { AsteriskConfigService } from '../asterisk/asterisk-config.service';
 import { InboundRouteEntity } from '../inbound-routes/entities/inbound-route.entity';
 import { VpnService } from '../vpn/vpn.service';
+import { getSipTlsStatus } from '../config/sip-tls';
+
+jest.mock('../config/sip-tls', () => ({ getSipTlsStatus: jest.fn() }));
 
 jest.mock('fs', () => {
   const actualFs = jest.requireActual('fs');
@@ -54,7 +57,10 @@ describe('ExtensionsService', () => {
     query: jest.fn(),
   };
 
+  const tlsEnabled = { enabled: true, hostname: 'sip.example.com', port: 5081 };
+
   beforeEach(async () => {
+    (getSipTlsStatus as jest.Mock).mockResolvedValue({ enabled: false, hostname: null, port: 5081 });
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         ExtensionsService,
@@ -286,6 +292,68 @@ describe('ExtensionsService', () => {
 
       expect(result.data.deleted).toBe(true);
       expect(extensionsRepo.delete).toHaveBeenCalledWith({ id: 1 });
+    });
+  });
+
+  describe('tls transport', () => {
+    const baseEntity = {
+      id: 1,
+      username: '1234',
+      password: 'old',
+      displayName: null,
+      transportType: 'sip',
+      vpnOnly: false,
+      createdAt: new Date(),
+    };
+
+    it('should build a transport-tls endpoint with mandatory SDES SRTP', async () => {
+      (getSipTlsStatus as jest.Mock).mockResolvedValue(tlsEnabled);
+      extensionsRepo.findOne.mockResolvedValue({ ...baseEntity });
+      extensionsRepo.save.mockResolvedValue({ ...baseEntity, transportType: 'tls' });
+      extensionsRepo.find.mockResolvedValue([{ ...baseEntity, transportType: 'tls' }]);
+
+      await service.update(1, { transportType: 'tls' });
+
+      expect(asteriskConfigService.syncExtensions).toHaveBeenCalledWith([
+        expect.objectContaining({
+          transport: 'transport-tls',
+          endpointFlags: expect.arrayContaining([
+            'media_encryption = sdes',
+            'media_encryption_optimistic = no',
+            'rtp_symmetric = yes',
+          ]),
+        }),
+      ]);
+    });
+
+    it('should reject creating a tls extension when SIP TLS is not enabled', async () => {
+      await expect(
+        service.create({ username: '200', password: 'pw', transportType: 'tls' }),
+      ).rejects.toThrow(BadRequestException);
+      expect(extensionsRepo.save).not.toHaveBeenCalled();
+    });
+
+    it('should reject switching to tls when SIP TLS is not enabled', async () => {
+      extensionsRepo.findOne.mockResolvedValue({ ...baseEntity });
+
+      await expect(service.update(1, { transportType: 'tls' })).rejects.toThrow(BadRequestException);
+    });
+
+    it('should return a TLS provisioning URI with the configured hostname and port', async () => {
+      (getSipTlsStatus as jest.Mock).mockResolvedValue(tlsEnabled);
+      extensionsRepo.findOne.mockResolvedValue({ id: 3, username: '103', password: 'secret', transportType: 'tls' });
+
+      await expect(service.getQrContent(3)).resolves.toEqual({
+        data: {
+          content: 'sip:103@sip.example.com:5081;transport=tls\npassword:secret\ntransport:tls',
+        },
+      });
+    });
+
+    it('should reject provisioning content for a tls extension when SIP TLS is not enabled', async () => {
+      extensionsRepo.findOne.mockResolvedValue({ id: 3, username: '103', password: 'secret', transportType: 'tls' });
+
+      await expect(service.getQrContent(3)).rejects.toThrow(BadRequestException);
     });
   });
 
