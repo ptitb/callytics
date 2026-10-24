@@ -117,6 +117,12 @@ ask_setting SIP_PORT "SIP port (use another port when this host already runs a P
 ask_setting AMI_PORT "Asterisk AMI port (FreePBX on the same host uses 5038)" "5038"
 ask_setting RTP_PORT_START "First RTP port (FreePBX uses 10000-20000)" "10000"
 ask_setting RTP_PORT_END "Last RTP port" "20000"
+ask_setting SIP_TLS_PORT "SIP TLS port (FreePBX TLS on the same host uses 5061)" "5081"
+ask_setting SIP_TLS_HOSTNAME "DNS name for SIP over TLS, for example sip.example.com (empty = TLS disabled)" ""
+if [[ -n "$(get_env SIP_TLS_HOSTNAME)" ]]; then
+  caddy_cert_dir="/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/$(get_env SIP_TLS_HOSTNAME)"
+  ask_setting SIP_TLS_CERT_DIR "Directory with the TLS certificate and key (default: Caddy certificate directory)" "$caddy_cert_dir"
+fi
 ask_setting WEB_BIND_ADDR "Web UI bind address (127.0.0.1 = only via a reverse proxy on this host, 0.0.0.0 = all interfaces, no authentication!)" "127.0.0.1"
 ask_setting UPLOAD_MAX_MB "Maximum upload size in MB" "100"
 

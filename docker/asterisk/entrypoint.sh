@@ -3,6 +3,8 @@ set -euo pipefail
 
 SIDECAR_PID=""
 ASTERISK_PID=""
+TLS_WATCH_PID=""
+SIP_TLS_ENABLED="no"
 ASTERISK_CONFIG_DIR="${ASTERISK_CONFIG_DIR:-/etc/asterisk}"
 
 # Render config that depends on installation settings in .env. These files are
@@ -19,6 +21,28 @@ envsubst '${SIP_PORT}' < "${TEMPLATE_DIR}/pjsip_transports.conf.tmpl" > "${ASTER
 envsubst '${ARI_BIND_ADDR}' < "${TEMPLATE_DIR}/http.conf.tmpl" > "${ASTERISK_CONFIG_DIR}/http.conf"
 chmod 640 "${ASTERISK_CONFIG_DIR}/ari.conf" "${ASTERISK_CONFIG_DIR}/manager.conf"
 echo "[asterisk-entrypoint] generated ari.conf, http.conf (bind ${ARI_BIND_ADDR}), manager.conf (AMI port ${AMI_PORT}) and pjsip_transports.conf (SIP port ${SIP_PORT})"
+
+# SIP TLS transport. Only rendered when the certificate and key exist, so a
+# missing or unreadable certificate never prevents Asterisk from starting.
+# The host directory SIP_TLS_CERT_DIR is mounted read-only at SIP_TLS_MOUNT_DIR.
+SIP_TLS_MOUNT_DIR="${SIP_TLS_MOUNT_DIR:-/etc/callytics-tls}"
+export SIP_TLS_PORT="${SIP_TLS_PORT:-5081}"
+SIP_TLS_CERT_NAME="${SIP_TLS_CERT_FILE:-${SIP_TLS_HOSTNAME:+${SIP_TLS_HOSTNAME}.crt}}"
+SIP_TLS_KEY_NAME="${SIP_TLS_KEY_FILE:-${SIP_TLS_HOSTNAME:+${SIP_TLS_HOSTNAME}.key}}"
+export SIP_TLS_CERT_FILE="${SIP_TLS_MOUNT_DIR}/${SIP_TLS_CERT_NAME}"
+export SIP_TLS_KEY_FILE="${SIP_TLS_MOUNT_DIR}/${SIP_TLS_KEY_NAME}"
+if [ -n "${SIP_TLS_CERT_NAME}" ] && [ -n "${SIP_TLS_KEY_NAME}" ] && [ -r "${SIP_TLS_CERT_FILE}" ] && [ -r "${SIP_TLS_KEY_FILE}" ]; then
+  envsubst '${SIP_TLS_PORT} ${SIP_TLS_CERT_FILE} ${SIP_TLS_KEY_FILE}' < "${TEMPLATE_DIR}/pjsip_tls.conf.tmpl" > "${ASTERISK_CONFIG_DIR}/pjsip_tls.conf"
+  SIP_TLS_ENABLED="yes"
+  echo "[asterisk-entrypoint] SIP TLS enabled on port ${SIP_TLS_PORT} (certificate ${SIP_TLS_CERT_NAME})"
+else
+  echo "; SIP TLS disabled: no readable certificate and key found. See SIP_TLS_* in .env." > "${ASTERISK_CONFIG_DIR}/pjsip_tls.conf"
+  if [ -z "${SIP_TLS_CERT_NAME}" ]; then
+    echo "[asterisk-entrypoint] SIP TLS disabled: SIP_TLS_HOSTNAME is not set in .env"
+  else
+    echo "[asterisk-entrypoint] SIP TLS disabled: no readable certificate and key (looked for ${SIP_TLS_CERT_FILE} and ${SIP_TLS_KEY_FILE}). Check SIP_TLS_CERT_DIR and SIP_TLS_HOSTNAME in .env"
+  fi
+fi
 
 # Initial rtp.conf from .env. After the first start the backend owns this file
 # and regenerates it from the RTP range in the Settings page.
@@ -52,7 +76,51 @@ else
   echo "[asterisk-entrypoint] capture sidecar disabled (TSHARK_ENABLED=${TSHARK_ENABLED:-unset})"
 fi
 
+# Hash of certificate and key, used to detect a renewal.
+tls_files_hash() {
+  cat "${SIP_TLS_CERT_FILE}" "${SIP_TLS_KEY_FILE}" 2>/dev/null | sha256sum | cut -d' ' -f1
+}
+
+# True when the private key belongs to the certificate. A mismatch (for example
+# while the certificate is being rewritten) would break every TLS handshake.
+tls_key_matches_cert() {
+  local cert_key private_key
+  cert_key="$(openssl x509 -in "${SIP_TLS_CERT_FILE}" -pubkey -noout 2>/dev/null)" || return 1
+  private_key="$(openssl pkey -in "${SIP_TLS_KEY_FILE}" -pubout 2>/dev/null)" || return 1
+  [ -n "${cert_key}" ] && [ "${cert_key}" = "${private_key}" ]
+}
+
+# Asterisk reads the certificate once. Reloading res_pjsip makes transport-tls
+# serve the new certificate (verified), so renewals by the ACME client (Caddy)
+# are picked up without restarting the container.
+watch_tls_certificate() {
+  local interval="${SIP_TLS_WATCH_INTERVAL:-3600}" last current
+  last="$(tls_files_hash)"
+  while sleep "${interval}"; do
+    current="$(tls_files_hash)"
+    [ "${current}" = "${last}" ] && continue
+    sleep 10 # let the writer finish both files
+    current="$(tls_files_hash)"
+    if ! tls_key_matches_cert; then
+      echo "[asterisk-entrypoint] SIP TLS certificate changed but key and certificate do not match, keeping the loaded certificate and retrying"
+      continue
+    fi
+    if asterisk -rx "module reload res_pjsip.so" >/dev/null 2>&1; then
+      last="${current}"
+      echo "[asterisk-entrypoint] SIP TLS certificate changed, reloaded res_pjsip"
+    else
+      echo "[asterisk-entrypoint] SIP TLS certificate changed but res_pjsip reload failed, retrying"
+    fi
+  done
+}
+
 cleanup() {
+  if [ -n "${TLS_WATCH_PID}" ]; then
+    kill -TERM "${TLS_WATCH_PID}" 2>/dev/null || true
+    wait "${TLS_WATCH_PID}" 2>/dev/null || true
+    TLS_WATCH_PID=""
+  fi
+
   if [ -n "${SIDECAR_PID}" ]; then
     kill -TERM "${SIDECAR_PID}" 2>/dev/null || true
     wait "${SIDECAR_PID}" 2>/dev/null || true
@@ -70,6 +138,11 @@ trap cleanup SIGINT SIGTERM
 
 asterisk -f -C /etc/asterisk/asterisk.conf &
 ASTERISK_PID=$!
+
+if [ "${SIP_TLS_ENABLED}" = "yes" ]; then
+  watch_tls_certificate &
+  TLS_WATCH_PID=$!
+fi
 
 wait "${ASTERISK_PID}"
 exit_code=$?

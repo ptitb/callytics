@@ -47,8 +47,21 @@ services:
       ARI_BIND_ADDR: ${ARI_BIND_ADDR:-127.0.0.1}
       RTP_PORT_START: ${RTP_PORT_START:-10000}
       RTP_PORT_END: ${RTP_PORT_END:-20000}
+      SIP_TLS_PORT: ${SIP_TLS_PORT:-5081}
+      SIP_TLS_HOSTNAME: ${SIP_TLS_HOSTNAME:-}
+      SIP_TLS_CERT_FILE: ${SIP_TLS_CERT_FILE:-}
+      SIP_TLS_KEY_FILE: ${SIP_TLS_KEY_FILE:-}
+      SIP_TLS_WATCH_INTERVAL: ${SIP_TLS_WATCH_INTERVAL:-3600}
     volumes:
       - ./asterisk/base:/etc/asterisk
+      # Certificate directory (read-only). Without SIP_TLS_CERT_DIR an empty directory is mounted and TLS stays disabled.
+      # create_host_path is off so a wrong SIP_TLS_CERT_DIR fails loudly instead of creating a root-owned directory.
+      - type: bind
+        source: ${SIP_TLS_CERT_DIR:-./asterisk/tls-disabled}
+        target: /etc/callytics-tls
+        read_only: true
+        bind:
+          create_host_path: false
       - callytics_asterisk_logs:/var/log/asterisk
       - callytics_audio_converted:/var/lib/asterisk/sounds/callytics
       - callytics_voicemail:/var/spool/asterisk/voicemail
@@ -98,6 +111,8 @@ services:
       BACKEND_BIND_ADDR: ${BACKEND_BIND_ADDR:-127.0.0.1}
       HOST_IP: ${HOST_IP:-127.0.0.1}
       SIP_PORT: ${SIP_PORT:-5080}
+      SIP_TLS_PORT: ${SIP_TLS_PORT:-5081}
+      SIP_TLS_HOSTNAME: ${SIP_TLS_HOSTNAME:-}
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-callytics}

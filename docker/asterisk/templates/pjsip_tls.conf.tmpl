@@ -1,0 +1,10 @@
+; generated at container start from .env (SIP_TLS_PORT, certificate files). Do not edit.
+[transport-tls]
+type = transport
+protocol = tls
+bind = 0.0.0.0:${SIP_TLS_PORT}
+cert_file = ${SIP_TLS_CERT_FILE}
+priv_key_file = ${SIP_TLS_KEY_FILE}
+method = tlsv1_2
+verify_client = no
+verify_server = no

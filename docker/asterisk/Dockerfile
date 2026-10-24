@@ -21,6 +21,7 @@ RUN apt-get update && apt-get install -y \
     libopus-dev \
     redis-tools \
     gettext-base \
+    openssl \
     tshark \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*

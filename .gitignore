@@ -47,3 +47,4 @@ asterisk/base/ari.conf
 asterisk/base/manager.conf
 asterisk/base/pjsip_transports.conf
 asterisk/base/http.conf
+asterisk/base/pjsip_tls.conf
