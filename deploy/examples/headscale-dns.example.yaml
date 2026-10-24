@@ -1,0 +1,16 @@
+# Snippet for the Headscale configuration file (for example /etc/headscale/config.yaml).
+# Merge it into your existing "dns" section, do not replace the whole section.
+#
+# Why: tailnet clients must resolve the Callytics hostname to the tailnet IP of
+# the server. Then their connection reaches Caddy over the tailnet and Caddy sees
+# a 100.64.0.0/10 source address, which the remote_ip allowlist accepts.
+# With the public DNS record they would connect to the public IP and be rejected.
+#
+# Requirements: MagicDNS enabled. Headscale 0.23 or newer uses "dns.extra_records";
+# older versions used "dns_config.extra_records". Restart Headscale after the change.
+dns:
+  magic_dns: true
+  extra_records:
+    - name: "callytics.example.com"
+      type: "A"
+      value: "100.64.0.X" # tailnet IP of the server, see: tailscale ip -4

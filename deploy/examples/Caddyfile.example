@@ -1,0 +1,46 @@
+# Example Caddyfile for Callytics behind Caddy (apt install, systemd).
+# Copy the relevant blocks to /etc/caddy/Caddyfile, adjust the hostnames and run:
+#   sudo caddy validate --config /etc/caddy/Caddyfile
+#   sudo systemctl reload caddy
+
+# Callytics web UI. It has no authentication of its own, so it is only served to
+# clients that connect through the tailnet. Callytics itself listens on
+# 127.0.0.1:3000 (WEB_BIND_ADDR in .env), Caddy is the only way in.
+#
+# The allowlist only works when the browser connects to the tailnet IP of this
+# server. Point the hostname to that IP with a Headscale DNS extra record, see
+# headscale-dns.example.yaml. Without it clients resolve the public IP, Caddy
+# sees their public address and the allowlist rejects them.
+callytics.example.com {
+	# Tailscale/Headscale address space (CGNAT range and the Tailscale IPv6 ULA prefix).
+	@allowed remote_ip 100.64.0.0/10 fd7a:115c:a1e0::/48
+
+	handle @allowed {
+		# Optional second layer: HTTP basic auth.
+		# Generate the hash with: caddy hash-password
+		# Use "basicauth" instead of "basic_auth" on Caddy older than 2.8.
+		#
+		# basic_auth {
+		# 	admin <paste-hash-from-caddy-hash-password>
+		# }
+
+		# WebSocket upgrades (/socket.io and the softphone /ws) are proxied
+		# by reverse_proxy automatically, no extra configuration needed.
+		reverse_proxy 127.0.0.1:3000
+	}
+
+	# Everyone else: close the connection without a response.
+	handle {
+		abort
+	}
+}
+
+# SIP TLS hostname. This site only exists so Caddy obtains and renews the
+# Let's Encrypt certificate for sip.example.com. Asterisk reads the certificate
+# from Caddy's storage (SIP_TLS_CERT_DIR in .env), no traffic is served here.
+# Ports 80 and 443 must be reachable from the internet for the ACME challenge.
+sip.example.com {
+	handle {
+		abort
+	}
+}
