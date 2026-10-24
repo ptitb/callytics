@@ -46,6 +46,8 @@ Before running `bash scripts/install.sh`, copy `.env.example` to `.env` and set 
 
 Then open `http://localhost:3000`
 
+The web UI, the API and Asterisk HTTP listen on `127.0.0.1` by default because the UI has no authentication. For a production setup with a public SIP provider, SIP over TLS (Groundwire and other softphones) and access to the UI over a private network behind Caddy, follow the go-live guide in [INSTALL.md](INSTALL.md) (Dutch).
+
 ## Requirements
 
 - Linux only (Ubuntu 22.04+ recommended)

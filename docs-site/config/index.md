@@ -26,6 +26,14 @@ Environment variables below follow repository `.env.example`. Secrets are genera
 | `SIP_PORT` | `5080` | Yes | SIP listening port advertised by backend host config endpoint. |
 | `RTP_PORT_START` | `10000` | No | First RTP port for the initial `rtp.conf`. Afterwards managed in Settings > Media (RTP). |
 | `RTP_PORT_END` | `20000` | No | Last RTP port for the initial `rtp.conf`. |
+| `SIP_TLS_PORT` | `5081` | No | SIP over TLS port (TCP). |
+| `SIP_TLS_HOSTNAME` | empty | No | DNS name softphones connect to. Used for the certificate file names and TLS provisioning URIs. |
+| `SIP_TLS_CERT_DIR` | empty | No | Host directory with `<SIP_TLS_HOSTNAME>.crt` and `.key`, mounted read-only. TLS stays disabled while empty. |
+| `SIP_TLS_CERT_FILE` / `SIP_TLS_KEY_FILE` | empty | No | Override the certificate and key file names inside `SIP_TLS_CERT_DIR`. |
+| `SIP_TLS_WATCH_INTERVAL` | `3600` | No | Seconds between checks for a renewed certificate. A change reloads `res_pjsip`. |
+| `WEB_BIND_ADDR` | `127.0.0.1` | No | Bind address of the web UI (nginx, port 3000). |
+| `BACKEND_BIND_ADDR` | `127.0.0.1` | No | Bind address of the backend API. |
+| `ARI_BIND_ADDR` | `127.0.0.1` | No | Bind address of Asterisk HTTP (ARI and the WebRTC WebSocket, port 8088). Rendered into `http.conf` and the WebSocket transport. |
 | `UPLOAD_MAX_MB` | `100` | No | Maximum upload size in MB for nginx (`client_max_body_size`) and the audio upload endpoint. |
 | `DIRECT_OUTBOUND_TIMEOUT_MS` | `30000` | No | How long a direct outbound call (`#` prefix) waits for the provider to answer. |
 | `PUID` | `1000` | No | WireGuard container runtime UID (linuxserver image setting). |
