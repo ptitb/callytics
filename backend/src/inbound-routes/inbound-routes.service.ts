@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, NotFoundException, OnModuleInit } from
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, In, Repository } from 'typeorm';
 import { AsteriskConfigService } from '../asterisk/asterisk-config.service';
+import { normalizePhoneNumber } from '../common/phone-number';
 import { runSqlMigrations } from '../db/run-sql-migrations';
 import { SipExtensionEntity } from '../extensions/entities/sip-extension.entity';
 import { CallFlowEntity } from '../flows/entities/call-flow.entity';
@@ -40,7 +41,7 @@ export class InboundRoutesService implements OnModuleInit {
   }
 
   async list(did?: string, limit = 20, offset = 0): Promise<{ data: InboundRouteResponse[]; total: number }> {
-    const where = did?.trim() ? { did: did.trim() } : undefined;
+    const where = did?.trim() ? { did: normalizePhoneNumber(did) ?? did.trim() } : undefined;
     const safeLimit = Math.max(1, limit);
     const safeOffset = Math.max(0, offset);
     const [items, total] = await this.inboundRoutesRepository.findAndCount({
@@ -57,7 +58,7 @@ export class InboundRoutesService implements OnModuleInit {
   }
 
   async create(dto: CreateInboundRouteDto): Promise<{ data: InboundRouteResponse }> {
-    const did = this.normalizeRequired(dto.did, 'did');
+    const did = this.normalizeDid(dto.did);
     await this.ensureFlowExists(dto.flowId);
     const existing = await this.inboundRoutesRepository.findOne({ where: { did } });
     if (existing) {
@@ -83,7 +84,7 @@ export class InboundRoutesService implements OnModuleInit {
     }
 
     if (dto.did !== undefined) {
-      const did = this.normalizeRequired(dto.did, 'did');
+      const did = this.normalizeDid(dto.did);
       const conflict = await this.inboundRoutesRepository.findOne({ where: { did } });
       if (conflict && conflict.id !== id) {
         throw new BadRequestException(`Inbound route DID ${did} already exists`);
@@ -158,6 +159,16 @@ export class InboundRoutesService implements OnModuleInit {
       throw new BadRequestException(`${field} is required`);
     }
     return normalized;
+  }
+
+  private normalizeDid(value: string | undefined): string {
+    const did = normalizePhoneNumber(value);
+    if (!did) {
+      throw new BadRequestException(
+        'did must be a phone number in E.164 format (digits with an optional leading +, no spaces or separators)',
+      );
+    }
+    return did;
   }
 
   private normalizeOptional(value?: string): string | null {

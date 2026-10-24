@@ -9,6 +9,7 @@ import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
 import { createInboundRoute, deleteInboundRoute, listFlows, listInboundRoutes, updateInboundRoute } from '../lib/api';
 import { getApiError } from '../lib/apiError';
 import { formatDateTime } from '../lib/time';
+import { normalizePhoneNumber } from '../lib/validation';
 import { useWindowWidth } from '../hooks/useWindowWidth';
 import type { FlowSummary, InboundRouteItem } from '../types';
 import styles from './InboundRoutesPage.module.css';
@@ -24,6 +25,7 @@ const emptyForm: RouteFormState = {
   label: '',
   flowId: '',
 };
+const INVALID_DID_MESSAGE = 'Enter a phone number in E.164 format: digits with an optional leading +, without spaces.';
 const INBOUND_EXTENSION_CONFLICT_MESSAGE = 'This number is already in use as an extension. Choose a different DID.';
 
 export function InboundRoutesPage() {
@@ -110,11 +112,16 @@ export function InboundRoutesPage() {
   };
 
   const handleCreate = async () => {
-    setBusyKey('create');
     resetMessages();
+    const did = normalizePhoneNumber(createForm.did);
+    if (!did) {
+      setCreateDidError(INVALID_DID_MESSAGE);
+      return;
+    }
+    setBusyKey('create');
     try {
       await createInboundRoute({
-        did: createForm.did.trim(),
+        did,
         label: createForm.label.trim() || undefined,
         flowId: Number(createForm.flowId),
       });
@@ -168,11 +175,16 @@ export function InboundRoutesPage() {
 
   const handleUpdate = async () => {
     if (editingId === null) return;
-    setBusyKey(`edit-${editingId}`);
     resetMessages();
+    const editDid = normalizePhoneNumber(editForm.did);
+    if (!editDid) {
+      setEditDidError(INVALID_DID_MESSAGE);
+      return;
+    }
+    setBusyKey(`edit-${editingId}`);
     try {
       await updateInboundRoute(editingId, {
-        did: editForm.did.trim(),
+        did: editDid,
         label: editForm.label.trim() || undefined,
         flowId: Number(editForm.flowId),
       });

@@ -98,6 +98,23 @@ describe('InboundRoutesService', () => {
       expect(asteriskConfigService.syncInboundRoutes).toHaveBeenCalled();
     });
 
+    it('stores a DID with spaces without the spaces', async () => {
+      mockFlowsRepo.findOne.mockResolvedValue({ id: 1 });
+      mockExtensionsRepo.findOne.mockResolvedValue(null);
+      inboundRoutesRepo.findOne.mockResolvedValue(null);
+      inboundRoutesRepo.create.mockImplementation((value: object) => ({ ...value, id: 1, createdAt: new Date() }));
+      inboundRoutesRepo.save.mockImplementation(async (value: object) => value);
+      inboundRoutesRepo.find.mockResolvedValue([]);
+
+      await service.create({ did: '+31 970 000 0000', flowId: 1 });
+
+      expect(inboundRoutesRepo.create).toHaveBeenCalledWith(expect.objectContaining({ did: '+319700000000' }));
+    });
+
+    it('rejects a DID that is not a phone number', async () => {
+      await expect(service.create({ did: 'not a number', flowId: 1 })).rejects.toThrow(BadRequestException);
+    });
+
     it('should throw BadRequestException if flow does not exist', async () => {
       mockFlowsRepo.findOne.mockResolvedValue(null);
       await expect(service.create({ did: '1', flowId: 99 })).rejects.toThrow(BadRequestException);
