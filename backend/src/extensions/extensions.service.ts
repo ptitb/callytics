@@ -156,7 +156,7 @@ export class ExtensionsService implements OnModuleInit {
       return { data: { content: 'Use the browser softphone to register this extension' } };
     }
     const hostIp = process.env.HOST_IP || '127.0.0.1';
-    const content = `sip:${extension.username}@${hostIp}:5080\npassword:${extension.password}\ntransport:udp`;
+    const content = `sip:${extension.username}@${hostIp}:${process.env.SIP_PORT || 5080}\npassword:${extension.password}\ntransport:udp`;
     return { data: { content } };
   }
 

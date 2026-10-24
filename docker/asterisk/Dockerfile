@@ -20,6 +20,7 @@ RUN apt-get update && apt-get install -y \
     libsrtp2-dev \
     libopus-dev \
     redis-tools \
+    gettext-base \
     tshark \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
@@ -77,9 +78,10 @@ rtcpstats=yes
 rtcpinterval=5000
 EOF
 
-EXPOSE 8088 5038 5060/udp
-EXPOSE 10000-10100/udp
+# Host networking is used, so EXPOSE is documentation only. Ports come from .env.
+EXPOSE 8088
 
+COPY templates /usr/local/share/callytics/asterisk-templates
 COPY capture-sidecar.js /usr/local/bin/capture-sidecar.js
 COPY entrypoint.sh /usr/local/bin/asterisk-entrypoint.sh
 RUN chmod +x /usr/local/bin/capture-sidecar.js /usr/local/bin/asterisk-entrypoint.sh

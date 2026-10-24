@@ -105,7 +105,7 @@ export class PreflightService implements OnModuleInit {
     const checks: Array<{ id: string; label: string; run: () => Promise<Omit<PreflightCheckResult, 'id' | 'label'>> }> = [
       { id: 'asterisk_ari', label: 'Asterisk ARI reachable', run: () => this.checkAsteriskAri() },
       { id: 'asterisk_ami', label: 'Asterisk AMI reachable', run: () => this.checkAsteriskAmi() },
-      { id: 'sip_port', label: 'SIP port 5080 listening', run: () => this.checkSipPort() },
+      { id: 'sip_port', label: 'SIP port listening', run: () => this.checkSipPort() },
       { id: 'rtp_range', label: 'RTP port range bound', run: () => this.checkRtpRange() },
       { id: 'port_conflicts', label: 'Host port conflict check', run: () => this.checkPortConflicts() },
       { id: 'postgres', label: 'PostgreSQL reachable', run: () => this.checkPostgres() },
@@ -244,6 +244,7 @@ export class PreflightService implements OnModuleInit {
 
       const amiHost = process.env.AMI_HOST ?? '127.0.0.1';
       const amiPort = Number(process.env.AMI_PORT ?? 5038);
+      const amiFailMessage = `Asterisk AMI is not responding on port ${amiPort}`;
       socket.connect(amiPort, amiHost, () => {
         socket.write('Action: Ping\r\n\r\n');
       });
@@ -259,7 +260,7 @@ export class PreflightService implements OnModuleInit {
       socket.on('timeout', () => {
         finish({
           status: 'fail',
-          message: 'Asterisk AMI is not responding on port 5038',
+          message: amiFailMessage,
           detail: 'timeout after 3s',
         });
       });
@@ -267,7 +268,7 @@ export class PreflightService implements OnModuleInit {
       socket.on('error', (error: NodeJS.ErrnoException) => {
         finish({
           status: 'fail',
-          message: 'Asterisk AMI is not responding on port 5038',
+          message: amiFailMessage,
           detail: error.code || error.message,
         });
       });
@@ -276,7 +277,7 @@ export class PreflightService implements OnModuleInit {
         if (!resolved) {
           finish({
             status: 'fail',
-            message: 'Asterisk AMI is not responding on port 5038',
+            message: amiFailMessage,
             detail: 'connection closed without success response',
           });
         }
@@ -285,18 +286,19 @@ export class PreflightService implements OnModuleInit {
   }
 
   private async checkSipPort(): Promise<Omit<PreflightCheckResult, 'id' | 'label'>> {
+    const sipPort = Number(process.env.SIP_PORT || 5080);
     const output = await this.execCommand('ss -ulnp');
-    if (output.includes(':5080')) {
+    if (output.includes(`:${sipPort}`)) {
       return {
         status: 'pass',
-        message: 'SIP is listening on port 5080',
+        message: `SIP is listening on port ${sipPort}`,
         detail: '',
       };
     }
 
     return {
       status: 'warn',
-      message: 'SIP port 5080 does not appear to be listening. Asterisk may not have started correctly.',
+      message: `SIP port ${sipPort} does not appear to be listening. Asterisk may not have started correctly.`,
       detail: '',
     };
   }
@@ -336,10 +338,12 @@ export class PreflightService implements OnModuleInit {
       this.execCommand('ss -ulnp'),
     ]);
 
+    const amiPort = Number(process.env.AMI_PORT || 5038);
+    const sipPort = Number(process.env.SIP_PORT || 5080);
     const expectations: PortExpectation[] = [
       { id: 'Asterisk ARI', protocol: 'tcp', port: 8088 },
-      { id: 'Asterisk AMI', protocol: 'tcp', port: 5038 },
-      { id: 'Asterisk SIP', protocol: 'udp', port: 5080 },
+      { id: 'Asterisk AMI', protocol: 'tcp', port: amiPort },
+      { id: 'Asterisk SIP', protocol: 'udp', port: sipPort },
       { id: 'Backend API', protocol: 'tcp', port: 3001 },
       { id: 'Redis', protocol: 'tcp', port: 6380 },
       { id: 'PostgreSQL', protocol: 'tcp', port: 5432 },
@@ -368,7 +372,7 @@ export class PreflightService implements OnModuleInit {
 
     return {
       status: 'pass',
-      message: 'All expected service ports are bound (8088, 5038, 5080, 3001, 6380, 5432)',
+      message: `All expected service ports are bound (8088, ${amiPort}, ${sipPort}, 3001, 6380, 5432)`,
       detail: '',
     };
   }

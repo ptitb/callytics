@@ -1,0 +1,14 @@
+; generated at container start from .env (AMI_PORT, AMI_USER, AMI_PASS). Do not edit.
+; AMI only listens on the loopback interface; backend and stasis run on the same host.
+[general]
+enabled = yes
+webenabled = no
+bindaddr = 127.0.0.1
+port = ${AMI_PORT}
+
+[${AMI_USER}]
+secret = ${AMI_PASS}
+deny = 0.0.0.0/0.0.0.0
+permit = 127.0.0.1/255.255.255.255
+read = system,call,log,verbose,command,agent,user,config,dtmf,reporting,cdr,dialplan
+write = system,call,log,verbose,command,agent,user,config,dtmf,reporting,cdr,dialplan

@@ -2,15 +2,15 @@ services:
   postgres:
     image: postgres:16
     environment:
-      POSTGRES_DB: callytics
-      POSTGRES_USER: callytics
-      POSTGRES_PASSWORD: callytics
+      POSTGRES_DB: ${DB_NAME:-callytics}
+      POSTGRES_USER: ${DB_USER:-callytics}
+      POSTGRES_PASSWORD: ${DB_PASS:?DB_PASS is not set in .env}
     ports:
       - 127.0.0.1:5432:5432
     volumes:
       - callytics_postgres_data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U callytics -d callytics"]
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -37,7 +37,15 @@ services:
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6380
       TSHARK_ENABLED: "true"
-      TSHARK_PORT: "5080"
+      TSHARK_PORT: ${SIP_PORT:-5080}
+      SIP_PORT: ${SIP_PORT:-5080}
+      AMI_PORT: ${AMI_PORT:-5038}
+      AMI_USER: ${AMI_USER:-callytics}
+      AMI_PASS: ${AMI_PASS:?AMI_PASS is not set in .env}
+      ARI_USER: ${ARI_USER:-callytics}
+      ARI_PASS: ${ARI_PASS:?ARI_PASS is not set in .env}
+      RTP_PORT_START: ${RTP_PORT_START:-10000}
+      RTP_PORT_END: ${RTP_PORT_END:-20000}
     volumes:
       - ./asterisk/base:/etc/asterisk
       - callytics_asterisk_logs:/var/log/asterisk
@@ -46,7 +54,7 @@ services:
       - asterisk_recordings:/var/lib/asterisk/recording
       - asterisk_recordings:/var/spool/asterisk/recording
     healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8088/ari/api-docs/resources.json --user callytics:callytics || exit 1"]
+      test: ["CMD-SHELL", "curl -f http://localhost:8088/ari/api-docs/resources.json --user $${ARI_USER}:$${ARI_PASS} || exit 1"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -77,23 +85,26 @@ services:
     environment:
       TZ: ${TZ:-UTC}
       ARI_URL: http://127.0.0.1:8088
-      ARI_PASSWORD: callytics
+      ARI_USER: ${ARI_USER:-callytics}
+      ARI_PASSWORD: ${ARI_PASS:?ARI_PASS is not set in .env}
       AMI_HOST: 127.0.0.1
-      AMI_PORT: 5038
-      AMI_USER: callytics
-      AMI_PASSWORD: callytics
+      AMI_PORT: ${AMI_PORT:-5038}
+      AMI_USER: ${AMI_USER:-callytics}
+      AMI_PASSWORD: ${AMI_PASS:?AMI_PASS is not set in .env}
+      RTP_PORT_START: ${RTP_PORT_START:-10000}
+      RTP_PORT_END: ${RTP_PORT_END:-20000}
       HOST_IP: ${HOST_IP:-127.0.0.1}
       SIP_PORT: ${SIP_PORT:-5080}
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
-      DB_NAME: callytics
-      DB_USER: callytics
-      DB_PASS: callytics
+      DB_NAME: ${DB_NAME:-callytics}
+      DB_USER: ${DB_USER:-callytics}
+      DB_PASS: ${DB_PASS:?DB_PASS is not set in .env}
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6380
       BACKEND_PORT: 3001
       NODE_ENV: development
-      RECORDINGS_INTERNAL_TOKEN: callytics-recordings-internal
+      RECORDINGS_INTERNAL_TOKEN: ${RECORDINGS_INTERNAL_TOKEN:?RECORDINGS_INTERNAL_TOKEN is not set in .env}
       GEOIP_DIR: /app/geoip
       UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-100}
       NODE_PATH: /app/backend/node_modules:/app/node_modules
@@ -137,21 +148,21 @@ services:
     environment:
       TZ: ${TZ:-UTC}
       ARI_URL: http://127.0.0.1:8088
-      ARI_USER: callytics
-      ARI_PASS: callytics
+      ARI_USER: ${ARI_USER:-callytics}
+      ARI_PASS: ${ARI_PASS:?ARI_PASS is not set in .env}
       ARI_APP: callytics
       DB_HOST: 127.0.0.1
       DB_PORT: 5432
-      DB_NAME: callytics
-      DB_USER: callytics
-      DB_PASS: callytics
+      DB_NAME: ${DB_NAME:-callytics}
+      DB_USER: ${DB_USER:-callytics}
+      DB_PASS: ${DB_PASS:?DB_PASS is not set in .env}
       REDIS_HOST: 127.0.0.1
       REDIS_PORT: 6380
       AMI_HOST: 127.0.0.1
-      AMI_PORT: 5038
-      AMI_USER: callytics
-      AMI_PASS: callytics
-      RECORDINGS_INTERNAL_TOKEN: callytics-recordings-internal
+      AMI_PORT: ${AMI_PORT:-5038}
+      AMI_USER: ${AMI_USER:-callytics}
+      AMI_PASS: ${AMI_PASS:?AMI_PASS is not set in .env}
+      RECORDINGS_INTERNAL_TOKEN: ${RECORDINGS_INTERNAL_TOKEN:?RECORDINGS_INTERNAL_TOKEN is not set in .env}
       STASIS_HEALTH_PORT: 3002
     depends_on:
       asterisk:

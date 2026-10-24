@@ -5,6 +5,19 @@ SIDECAR_PID=""
 ASTERISK_PID=""
 ASTERISK_CONFIG_DIR="${ASTERISK_CONFIG_DIR:-/etc/asterisk}"
 
+# Render config that depends on installation settings in .env. These files are
+# derived from the environment on every start, so .env stays the single source.
+: "${ARI_USER:?ARI_USER is not set}" "${ARI_PASS:?ARI_PASS is not set}"
+: "${AMI_USER:?AMI_USER is not set}" "${AMI_PASS:?AMI_PASS is not set}"
+export AMI_PORT="${AMI_PORT:-5038}"
+export SIP_PORT="${SIP_PORT:-5080}"
+TEMPLATE_DIR="${ASTERISK_TEMPLATE_DIR:-/usr/local/share/callytics/asterisk-templates}"
+envsubst '${ARI_USER} ${ARI_PASS}' < "${TEMPLATE_DIR}/ari.conf.tmpl" > "${ASTERISK_CONFIG_DIR}/ari.conf"
+envsubst '${AMI_PORT} ${AMI_USER} ${AMI_PASS}' < "${TEMPLATE_DIR}/manager.conf.tmpl" > "${ASTERISK_CONFIG_DIR}/manager.conf"
+envsubst '${SIP_PORT}' < "${TEMPLATE_DIR}/pjsip_transports.conf.tmpl" > "${ASTERISK_CONFIG_DIR}/pjsip_transports.conf"
+chmod 640 "${ASTERISK_CONFIG_DIR}/ari.conf" "${ASTERISK_CONFIG_DIR}/manager.conf"
+echo "[asterisk-entrypoint] generated ari.conf, manager.conf (AMI port ${AMI_PORT}) and pjsip_transports.conf (SIP port ${SIP_PORT})"
+
 # Initial rtp.conf from .env. After the first start the backend owns this file
 # and regenerates it from the RTP range in the Settings page.
 if [ ! -f "${ASTERISK_CONFIG_DIR}/rtp.conf" ]; then
