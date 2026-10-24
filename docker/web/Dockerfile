@@ -24,7 +24,10 @@ RUN npm run build
 
 FROM nginx:alpine
 
-COPY docker/web/nginx.conf /etc/nginx/conf.d/default.conf
+ENV UPLOAD_MAX_MB=100
+
+# The nginx image renders /etc/nginx/templates/*.template with envsubst at start.
+COPY docker/web/nginx.conf /etc/nginx/templates/default.conf.template
 COPY --from=build /app/frontend/dist /usr/share/nginx/html
 
 EXPOSE 3000

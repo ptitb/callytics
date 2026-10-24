@@ -1,5 +1,6 @@
 import { isValidIpMatch, normalizeIpMatchList } from './ip-match';
 import { normalizePhoneNumber, normalizeSipUser } from './phone-number';
+import { getUploadMaxBytes } from './upload-limit';
 
 describe('normalizePhoneNumber', () => {
   it.each([
@@ -56,5 +57,20 @@ describe('IP match validation', () => {
 
   it('returns an empty list for undefined', () => {
     expect(normalizeIpMatchList(undefined)).toEqual([]);
+  });
+});
+
+describe('getUploadMaxBytes', () => {
+  it('defaults to 100 MB', () => {
+    expect(getUploadMaxBytes({} as NodeJS.ProcessEnv)).toBe(100 * 1024 * 1024);
+  });
+
+  it('reads UPLOAD_MAX_MB', () => {
+    expect(getUploadMaxBytes({ UPLOAD_MAX_MB: '25' } as NodeJS.ProcessEnv)).toBe(25 * 1024 * 1024);
+  });
+
+  it('ignores invalid values', () => {
+    expect(getUploadMaxBytes({ UPLOAD_MAX_MB: 'abc' } as NodeJS.ProcessEnv)).toBe(100 * 1024 * 1024);
+    expect(getUploadMaxBytes({ UPLOAD_MAX_MB: '-5' } as NodeJS.ProcessEnv)).toBe(100 * 1024 * 1024);
   });
 });

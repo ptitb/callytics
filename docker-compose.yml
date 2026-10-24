@@ -95,6 +95,7 @@ services:
       NODE_ENV: development
       RECORDINGS_INTERNAL_TOKEN: callytics-recordings-internal
       GEOIP_DIR: /app/geoip
+      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-100}
       NODE_PATH: /app/backend/node_modules:/app/node_modules
     depends_on:
       asterisk:
@@ -118,6 +119,7 @@ services:
     network_mode: "host"
     environment:
       VITE_DISPLAY_TIMEZONE: ${VITE_DISPLAY_TIMEZONE:-UTC}
+      UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-100}
     volumes:
       - .:/app
       - /app/node_modules

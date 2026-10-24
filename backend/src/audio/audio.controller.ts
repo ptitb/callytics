@@ -1,6 +1,7 @@
 import { Body, Controller, DefaultValuePipe, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Put, Query, Res, UploadedFile, UseInterceptors } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import type { Response } from 'express';
+import { getUploadMaxBytes } from '../common/upload-limit';
 import { CreateTtsDto } from './dto/create-tts.dto';
 import { PreviewTtsDto } from './dto/preview-tts.dto';
 import { UpdateAudioDto } from './dto/update-audio.dto';
@@ -34,7 +35,7 @@ export class AudioController {
   }
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: getUploadMaxBytes() } }))
   upload(@UploadedFile() file: Express.Multer.File, @Body('name') name?: string) {
     return this.audioService.upload(file, name);
   }
