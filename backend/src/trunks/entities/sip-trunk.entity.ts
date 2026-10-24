@@ -29,6 +29,9 @@ export class SipTrunkEntity {
   @Column({ name: 'from_user', type: 'varchar', length: 255, nullable: true })
   fromUser!: string | null;
 
+  @Column({ name: 'inbound_ips', type: 'text', array: true, default: () => "'{}'" })
+  inboundIps!: string[];
+
   @Column({ name: 'dial_format', type: 'varchar', length: 50, default: '{number}' })
   dialFormat!: string;
 

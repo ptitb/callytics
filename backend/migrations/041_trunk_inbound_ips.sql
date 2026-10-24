@@ -1,0 +1,2 @@
+ALTER TABLE sip_trunks
+  ADD COLUMN IF NOT EXISTS inbound_ips TEXT[] NOT NULL DEFAULT '{}';

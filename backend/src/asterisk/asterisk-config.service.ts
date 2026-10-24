@@ -12,6 +12,7 @@ import { AppLogger } from "../logger/app-logger";
 import type { ResolvedExtensionConfig } from "../extensions/extensions.service";
 import { SipExtensionEntity } from "../extensions/entities/sip-extension.entity";
 import { SipTrunkEntity } from "../trunks/entities/sip-trunk.entity";
+import { normalizePhoneNumber, normalizeSipUser } from "../common/phone-number";
 import { VpnService } from "../vpn/vpn.service";
 
 const NO_REGISTER_PRESETS = ["twilio", "telnyx", "vonage", "signalwire"];
@@ -20,6 +21,36 @@ export interface AmiQualifyResult {
   status: "reachable" | "unreachable" | "not_loaded";
   rtt_ms: number | null;
   message: string;
+}
+
+export interface AmiPjsipIdentify {
+  name: string;
+  endpoint: string;
+  matches: string[];
+}
+
+/**
+ * Parses the output of the AMI/CLI command "pjsip show identifies".
+ * Each identify starts with "Identify: <name>/<endpoint>" followed by "Match: <address>" lines.
+ */
+export function parsePjsipIdentifies(output: string): AmiPjsipIdentify[] {
+  const identifies: AmiPjsipIdentify[] = [];
+  let current: AmiPjsipIdentify | null = null;
+  for (const rawLine of output.split(/\r?\n/)) {
+    // The AMI Command action prefixes every output line with "Output: ".
+    const line = rawLine.replace(/^Output:\s?/, "");
+    const identifyMatch = line.match(/^\s*Identify:\s+([^\s<>/]+)\/([^\s<>/]+)/);
+    if (identifyMatch) {
+      current = { name: identifyMatch[1], endpoint: identifyMatch[2], matches: [] };
+      identifies.push(current);
+      continue;
+    }
+    const matchLine = line.match(/^\s*Match:\s*(\S+)/);
+    if (matchLine && current) {
+      current.matches.push(matchLine[1]);
+    }
+  }
+  return identifies;
 }
 
 export interface AmiConnectionStatus {
@@ -255,6 +286,11 @@ export class AsteriskConfigService implements OnModuleInit {
 
   async reloadDialplan(): Promise<void> {
     await this.sendAmiCommand("dialplan reload");
+  }
+
+  async getPjsipIdentifies(): Promise<AmiPjsipIdentify[]> {
+    const output = await this.sendAmiCommand("pjsip show identifies");
+    return parsePjsipIdentifies(output);
   }
 
   async qualifyEndpoint(endpoint: string): Promise<AmiQualifyResult> {
@@ -628,9 +664,10 @@ export class AsteriskConfigService implements OnModuleInit {
         }
 
         if (trunk.fromUser) {
-          endpointLines.push(
-            `from_user = ${trunk.fromUser.replace(/\s+/g, "")}`,
-          );
+          const fromUser = normalizeSipUser(trunk.fromUser);
+          if (fromUser) {
+            endpointLines.push(`from_user = ${fromUser}`);
+          }
         }
 
         const lines: string[] = [];
@@ -667,6 +704,17 @@ export class AsteriskConfigService implements OnModuleInit {
           `contact = sip:${trunk.host}:${trunk.port}`,
         );
 
+        const inboundIps = trunk.inboundIps ?? [];
+        if (inboundIps.length > 0) {
+          lines.push(
+            "",
+            `[trunk-${trunk.id}-identify]`,
+            "type = identify",
+            `endpoint = trunk-${trunk.id}`,
+            ...inboundIps.map((ip) => `match = ${ip}`),
+          );
+        }
+
         return lines.join("\n");
       });
 
@@ -692,8 +740,13 @@ export class AsteriskConfigService implements OnModuleInit {
       lines.push("");
     }
     for (const route of routes) {
-      lines.push(`exten => ${route.did},1,Stasis(callytics)`);
-      lines.push(`exten => ${route.did},n,Hangup()`);
+      const did = normalizePhoneNumber(route.did);
+      if (!did) {
+        this.logger.warn(`skipping inbound route ${route.id}: invalid DID "${route.did}"`);
+        continue;
+      }
+      lines.push(`exten => ${did},1,Stasis(callytics)`);
+      lines.push(`exten => ${did},n,Hangup()`);
       lines.push("");
     }
     lines.push("exten => _#.,1,Stasis(callytics)");
@@ -973,7 +1026,7 @@ export class AsteriskConfigService implements OnModuleInit {
     });
   }
 
-  private async sendAmiCommand(command: string): Promise<void> {
+  private async sendAmiCommand(command: string): Promise<string> {
     const script = [
       "import socket, sys, time",
       "host, port, user, password, command = sys.argv[1:6]",
@@ -1006,9 +1059,10 @@ export class AsteriskConfigService implements OnModuleInit {
       "except TimeoutError:",
       "    pass",
       "sock.close()",
+      "print(response)",
     ].join("\n");
 
-    await this.runPythonScript(script, [
+    const output = await this.runPythonScript(script, [
       this.amiHost,
       String(this.amiPort),
       this.amiUser,
@@ -1016,6 +1070,7 @@ export class AsteriskConfigService implements OnModuleInit {
       command,
     ]);
     this.logger.log(`AMI command executed: ${command}`);
+    return output;
   }
 
   private async runPythonScript(

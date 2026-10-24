@@ -5,6 +5,8 @@ import * as net from 'net';
 import { createClient, type RedisClientType } from 'redis';
 import { DataSource, Repository } from 'typeorm';
 import { AsteriskConfigService, type AmiQualifyResult } from '../asterisk/asterisk-config.service';
+import { normalizeIpMatchList } from '../common/ip-match';
+import { normalizeSipUser } from '../common/phone-number';
 import { runSqlMigrations } from '../db/run-sql-migrations';
 import { AppLogger } from '../logger/app-logger';
 import { CreateTrunkDto } from './dto/create-trunk.dto';
@@ -21,9 +23,17 @@ export interface TrunkResponse {
   password: string | null;
   fromDomain: string | null;
   fromUser: string | null;
+  inboundIps: string[];
   dialFormat: string;
   enabled: boolean;
   createdAt: string;
+}
+
+export interface TrunkIdentifyStatus {
+  configured: boolean;
+  active: boolean;
+  matches: string[];
+  message: string;
 }
 
 type TrunkTestStatus = 'dialing' | 'answered' | 'completed' | 'failed';
@@ -84,6 +94,7 @@ export class TrunksService implements OnModuleInit, OnModuleDestroy {
       password: this.normalizeOptional(dto.password),
       fromDomain: this.normalizeOptional(dto.fromDomain),
       fromUser: this.normalizePhone(dto.fromUser),
+      inboundIps: this.normalizeInboundIps(dto.inboundIps),
       dialFormat,
       enabled: dto.enabled ?? true,
     });
@@ -141,6 +152,10 @@ export class TrunksService implements OnModuleInit, OnModuleDestroy {
       entity.fromUser = this.normalizePhone(dto.fromUser);
     }
 
+    if (dto.inboundIps !== undefined) {
+      entity.inboundIps = this.normalizeInboundIps(dto.inboundIps);
+    }
+
     if (dto.dialFormat !== undefined) {
       const dialFormat = this.normalizeDialFormat(dto.dialFormat);
       this.validateDialFormat(dialFormat);
@@ -168,6 +183,26 @@ export class TrunksService implements OnModuleInit, OnModuleDestroy {
     await this.trunksRepository.delete({ id });
     await this.asteriskConfigService.writeTrunksConfig();
     await this.asteriskConfigService.reloadResPjsip();
+  }
+
+  async getIdentifyStatus(id: number): Promise<TrunkIdentifyStatus> {
+    const entity = await this.requireTrunk(id);
+    const configured = entity.enabled && (entity.inboundIps ?? []).length > 0;
+    if (!configured) {
+      return { configured: false, active: false, matches: [], message: 'No inbound IP addresses configured' };
+    }
+
+    try {
+      const identifies = await this.asteriskConfigService.getPjsipIdentifies();
+      const identify = identifies.find((item) => item.endpoint === `trunk-${entity.id}`);
+      if (!identify) {
+        return { configured: true, active: false, matches: [], message: 'Identify object not loaded in Asterisk' };
+      }
+      return { configured: true, active: true, matches: identify.matches, message: 'Identify object active' };
+    } catch (error) {
+      this.logger.warn(`identify status lookup failed id=${id}: ${error instanceof Error ? error.message : String(error)}`);
+      return { configured: true, active: false, matches: [], message: 'Could not query Asterisk (AMI unavailable)' };
+    }
   }
 
   async test(id: number): Promise<AmiQualifyResult> {
@@ -327,6 +362,7 @@ export class TrunksService implements OnModuleInit, OnModuleDestroy {
       password: item.password,
       fromDomain: item.fromDomain,
       fromUser: item.fromUser,
+      inboundIps: item.inboundIps ?? [],
       dialFormat: item.dialFormat || '{number}',
       enabled: item.enabled,
       createdAt: item.createdAt.toISOString(),
@@ -352,8 +388,15 @@ export class TrunksService implements OnModuleInit, OnModuleDestroy {
   }
 
   private normalizePhone(value?: string): string | null {
-    const normalized = value?.trim().replace(/\s+/g, '');
-    return normalized ? normalized : null;
+    return normalizeSipUser(value);
+  }
+
+  private normalizeInboundIps(values?: string[]): string[] {
+    try {
+      return normalizeIpMatchList(values);
+    } catch (error) {
+      throw new BadRequestException(error instanceof Error ? error.message : 'inboundIps is invalid');
+    }
   }
 
   private normalizeDialFormat(value?: string): string {

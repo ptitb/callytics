@@ -1,4 +1,4 @@
-import { IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class CreateTrunkDto {
   @IsString()
@@ -38,6 +38,13 @@ export class CreateTrunkDto {
   @IsString()
   @MaxLength(255)
   fromUser?: string;
+
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(100)
+  @IsString({ each: true })
+  @MaxLength(43, { each: true })
+  inboundIps?: string[];
 
   @IsOptional()
   @IsString()

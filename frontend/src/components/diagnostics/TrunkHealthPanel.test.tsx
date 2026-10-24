@@ -24,6 +24,7 @@ describe('TrunkHealthPanel', () => {
             password: null,
             fromDomain: null,
             fromUser: null,
+    inboundIps: [],
             dialFormat: '{number}',
             enabled: true,
             createdAt: new Date().toISOString(),

@@ -36,6 +36,11 @@ export class TrunksController {
     await this.trunksService.remove(id);
   }
 
+  @Get(':id/identify-status')
+  identifyStatus(@Param('id', ParseIntPipe) id: number) {
+    return this.trunksService.getIdentifyStatus(id).then((data) => ({ data }));
+  }
+
   @Post(':id/test')
   @HttpCode(200)
   test(@Param('id', ParseIntPipe) id: number) {

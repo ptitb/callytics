@@ -11,6 +11,7 @@ import {
   createTrunk,
   deleteTrunk,
   getSettings,
+  getTrunkIdentifyStatus,
   getTrunkTestStatus,
   listAllAudio,
   listTrunks,
@@ -22,8 +23,9 @@ import {
 } from '../lib/api';
 import { getApiError } from '../lib/apiError';
 import { formatDateTime } from '../lib/time';
+import { findInvalidIpMatches, parseIpMatchInput } from '../lib/validation';
 import { useWindowWidth } from '../hooks/useWindowWidth';
-import type { AudioFileItem, SipTrunkItem, SystemSettings, TrunkTestResult } from '../types';
+import type { AudioFileItem, SipTrunkItem, SystemSettings, TrunkIdentifyStatus, TrunkTestResult } from '../types';
 import styles from './TrunksPage.module.css';
 
 function SignalIcon() {
@@ -98,6 +100,7 @@ interface TrunkFormState {
   password: string;
   fromDomain: string;
   fromUser: string;
+  inboundIps: string;
   dialFormat: string;
 }
 
@@ -134,6 +137,7 @@ const emptyForm: TrunkFormState = {
   password: '',
   fromDomain: '',
   fromUser: '',
+  inboundIps: '',
   dialFormat: '{number}',
 };
 
@@ -183,6 +187,7 @@ function toForm(item: SipTrunkItem | null): TrunkFormState {
     password: item.password || '',
     fromDomain: item.fromDomain || '',
     fromUser: item.fromUser || '',
+    inboundIps: (item.inboundIps || []).join('\n'),
     dialFormat: item.dialFormat || '{number}',
   };
 }
@@ -203,6 +208,7 @@ export function TrunksPage() {
   const [confirmDeleteId, setConfirmDeleteId] = useState<number | null>(null);
   const [busyKey, setBusyKey] = useState<string | null>(null);
   const [errorText, setErrorText] = useState<string | null>(null);
+  const [identifyStatus, setIdentifyStatus] = useState<Record<number, TrunkIdentifyStatus>>({});
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [testResults, setTestResults] = useState<Record<number, TrunkTestResult>>({});
@@ -414,6 +420,7 @@ export function TrunksPage() {
     setOpenMenuId(null);
     setEditingId(item.id);
     setEditForm(toForm(item));
+    void refreshIdentifyStatus(item.id);
   };
 
   const applyPreset = (
@@ -448,12 +455,33 @@ export function TrunksPage() {
     return 'sip.provider.com';
   };
 
+  const refreshIdentifyStatus = async (id: number) => {
+    try {
+      const status = await getTrunkIdentifyStatus(id);
+      setIdentifyStatus((current) => ({ ...current, [id]: status }));
+    } catch {
+      // Status is informational; a failed lookup must not block the form.
+    }
+  };
+
+  const validateInboundIps = (text: string): string[] | null => {
+    const entries = parseIpMatchInput(text);
+    const invalid = findInvalidIpMatches(entries);
+    if (invalid.length > 0) {
+      showError(`Invalid inbound IP address or CIDR range: ${invalid.join(', ')}`);
+      return null;
+    }
+    return entries;
+  };
+
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
-    setBusyKey('create');
     resetMessages();
+    const inboundIps = validateInboundIps(createForm.inboundIps);
+    if (!inboundIps) return;
+    setBusyKey('create');
     try {
-      await createTrunk({
+      const created = await createTrunk({
         name: createForm.name.trim(),
         providerPreset: createForm.providerPreset,
         host: createForm.host.trim(),
@@ -462,10 +490,12 @@ export function TrunksPage() {
         password: createForm.username.trim() ? createForm.password : undefined,
         fromDomain: createForm.fromDomain.trim() || undefined,
         fromUser: createForm.fromUser.trim() || undefined,
+        inboundIps,
         dialFormat: createForm.dialFormat.trim() || '{number}',
       });
       hideCreate();
       setOffset(0);
+      void refreshIdentifyStatus(created.data.id);
       await Promise.all([load(limit, 0), loadSettingsPanel()]);
     } catch (error) {
       showError(getApiError(error, 'failed to create trunk'));
@@ -477,8 +507,10 @@ export function TrunksPage() {
   const handleUpdate = async (event: FormEvent) => {
     event.preventDefault();
     if (editingId === null) return;
-    setBusyKey(`edit-${editingId}`);
     resetMessages();
+    const inboundIps = validateInboundIps(editForm.inboundIps);
+    if (!inboundIps) return;
+    setBusyKey(`edit-${editingId}`);
     try {
       await updateTrunk(editingId, {
         name: editForm.name.trim(),
@@ -489,10 +521,13 @@ export function TrunksPage() {
         password: editForm.username.trim() ? editForm.password : undefined,
         fromDomain: editForm.fromDomain.trim() || undefined,
         fromUser: editForm.fromUser.trim() || undefined,
+        inboundIps,
         dialFormat: editForm.dialFormat.trim() || '{number}',
       });
+      const savedId = editingId;
       hideEdit();
       await Promise.all([load(limit, offset), loadSettingsPanel()]);
+      void refreshIdentifyStatus(savedId);
     } catch (error) {
       showError(getApiError(error, 'failed to update trunk'));
     } finally {
@@ -887,6 +922,14 @@ export function TrunksPage() {
               }} />
             </label>
             <label className={styles.field}>
+              <span className={styles.fieldLabel}>inbound IP addresses</span>
+              <textarea className={styles.textarea} placeholder={'one per line, for example 192.0.2.10 or 198.51.100.0/24'} value={createForm.inboundIps} onChange={(event) => {
+                resetMessages();
+                setCreateForm((current) => ({ ...current, inboundIps: event.target.value }));
+              }} />
+              <span className={styles.helper}>Calls from these addresses are matched to this trunk. Leave empty if the provider registers or authenticates with credentials. IPv4 addresses and CIDR ranges.</span>
+            </label>
+            <label className={styles.field}>
               <span className={styles.fieldLabel}>dial format</span>
               <input className={`${styles.input} ${styles.dataMono}`} value={createForm.dialFormat} onChange={(event) => {
                 resetMessages();
@@ -1204,6 +1247,21 @@ export function TrunksPage() {
                                 setEditForm((current) => ({ ...current, fromUser: event.target.value }));
                               }} />
                             </label>
+                    <label className={styles.field}>
+                      <span className={styles.fieldLabel}>inbound IP addresses</span>
+                      <textarea className={styles.textarea} placeholder={'one per line, for example 192.0.2.10 or 198.51.100.0/24'} value={editForm.inboundIps} onChange={(event) => {
+                        resetMessages();
+                        setEditForm((current) => ({ ...current, inboundIps: event.target.value }));
+                      }} />
+                      <span className={styles.helper}>Calls from these addresses are matched to this trunk. Leave empty if the provider registers or authenticates with credentials. IPv4 addresses and CIDR ranges.</span>
+                      {identifyStatus[item.id]?.configured ? (
+                        <span className={identifyStatus[item.id].active ? styles.helper : styles.inlineFieldError}>
+                          {identifyStatus[item.id].active
+                            ? `Identify active in Asterisk (${identifyStatus[item.id].matches.join(', ')})`
+                            : `Identify not active: ${identifyStatus[item.id].message}`}
+                        </span>
+                      ) : null}
+                    </label>
                             <label className={styles.field}>
                               <span className={styles.fieldLabel}>dial format</span>
                               <input className={`${styles.input} ${styles.dataMono}`} value={editForm.dialFormat} onChange={(event) => {

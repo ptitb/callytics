@@ -30,6 +30,7 @@ import type {
   SettingsPatch,
   SystemSettings,
   TrunkDiagnosticsResult,
+  TrunkIdentifyStatus,
   TrunkTestResult,
   PreflightRun,
   CampaignItem,
@@ -384,6 +385,7 @@ export async function createTrunk(payload: {
   password?: string;
   fromDomain?: string;
   fromUser?: string;
+  inboundIps?: string[];
   dialFormat?: string;
   enabled?: boolean;
 }): Promise<DetailResponse<SipTrunkItem>> {
@@ -400,6 +402,7 @@ export async function updateTrunk(id: number, payload: {
   password?: string;
   fromDomain?: string;
   fromUser?: string;
+  inboundIps?: string[];
   dialFormat?: string;
   enabled?: boolean;
 }): Promise<DetailResponse<SipTrunkItem>> {
@@ -409,6 +412,11 @@ export async function updateTrunk(id: number, payload: {
 
 export async function deleteTrunk(id: number): Promise<void> {
   await api.delete(`/trunks/${id}`);
+}
+
+export async function getTrunkIdentifyStatus(id: number): Promise<TrunkIdentifyStatus> {
+  const response = await api.get<DetailResponse<TrunkIdentifyStatus>>(`/trunks/${id}/identify-status`);
+  return response.data.data;
 }
 
 export async function testTrunk(id: number): Promise<TrunkTestResult> {

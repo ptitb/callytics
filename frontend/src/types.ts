@@ -615,9 +615,17 @@ export interface SipTrunkItem {
   password: string | null;
   fromDomain: string | null;
   fromUser: string | null;
+  inboundIps: string[];
   dialFormat: string;
   enabled: boolean;
   createdAt: string;
+}
+
+export interface TrunkIdentifyStatus {
+  configured: boolean;
+  active: boolean;
+  matches: string[];
+  message: string;
 }
 
 export type SettingValue = boolean | number | string | null;
