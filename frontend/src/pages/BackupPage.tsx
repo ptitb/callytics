@@ -494,6 +494,10 @@ export function BackupPage() {
               <span className={styles.dropFileName}>{selectedFile?.name || '—'}</span>
             </button>
 
+            <p className={styles.restoreNote}>
+              Restoring restarts the Asterisk and Stasis containers. Active calls are dropped and softphones must register again.
+            </p>
+
             <div className={styles.restoreControls}>
               <ToggleSwitch
                 checked={fileRestoreOptions.restoreDb}
@@ -603,6 +607,9 @@ export function BackupPage() {
                           <tr>
                             <td className={styles.restorePanelCell} colSpan={6}>
                               <div className={styles.inlineRestorePanel}>
+                                <p className={styles.restoreNote}>
+                                  Restoring restarts the Asterisk and Stasis containers. Active calls are dropped and softphones must register again.
+                                </p>
                                 <div className={styles.restoreControls}>
                                   <ToggleSwitch
                                     checked={options.restoreDb}
