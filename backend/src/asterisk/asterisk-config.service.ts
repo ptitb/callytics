@@ -12,6 +12,12 @@ import { AppLogger } from "../logger/app-logger";
 import type { ResolvedExtensionConfig } from "../extensions/extensions.service";
 import { SipExtensionEntity } from "../extensions/entities/sip-extension.entity";
 import { SipTrunkEntity } from "../trunks/entities/sip-trunk.entity";
+import {
+  buildRtpConfig,
+  getEnvRtpRange,
+  validateRtpRange,
+  type RtpRange,
+} from "./rtp-range";
 import { normalizePhoneNumber, normalizeSipUser } from "../common/phone-number";
 import { VpnService } from "../vpn/vpn.service";
 
@@ -111,6 +117,14 @@ export class AsteriskConfigService implements OnModuleInit {
   async onModuleInit(): Promise<void> {
     await runSqlMigrations(this.dataSource);
     await this.writeTrunksConfig();
+    try {
+      await this.syncRtpConfig();
+    } catch (error) {
+      this.logger.error(
+        "failed to regenerate rtp config on startup",
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
     try {
       await this.syncWebRTCConfig();
     } catch (error) {
@@ -229,6 +243,57 @@ export class AsteriskConfigService implements OnModuleInit {
       "utf8",
     );
     await this.ensureManagedPjsipIncludes();
+  }
+
+  /** RTP range from the settings table, falling back to the .env defaults. */
+  async getRtpRange(): Promise<RtpRange> {
+    const fallback = getEnvRtpRange();
+    try {
+      const rows: Array<{ key: string; value: string | null }> =
+        await this.dataSource.query(
+          "SELECT key, value FROM settings WHERE key IN ('rtp_port_start', 'rtp_port_end')",
+        );
+      const byKey = new Map(rows.map((row) => [row.key, Number(row.value)]));
+      const range = {
+        start: byKey.get("rtp_port_start") || fallback.start,
+        end: byKey.get("rtp_port_end") || fallback.end,
+      };
+      return validateRtpRange(range) === null ? range : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
+  /**
+   * Writes rtp.conf for the configured range. When the file content changes
+   * the res_rtp_asterisk module is reloaded; new calls then use the new range.
+   * Returns true when the file changed.
+   */
+  async syncRtpConfig(range?: RtpRange): Promise<boolean> {
+    const next = buildRtpConfig(range ?? (await this.getRtpRange()));
+    const filePath = join(this.configDir, "rtp.conf");
+    let current = "";
+    try {
+      current = await fs.readFile(filePath, "utf8");
+    } catch {
+      current = "";
+    }
+    if (current === next) {
+      return false;
+    }
+    await fs.mkdir(this.configDir, { recursive: true });
+    await fs.writeFile(filePath, next, "utf8");
+    try {
+      await this.sendAmiCommand("module reload res_rtp_asterisk.so");
+    } catch (error) {
+      if (range) {
+        throw error;
+      }
+      this.logger.warn(
+        `rtp.conf written but module reload failed: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+    return true;
   }
 
   async reloadResPjsip(): Promise<void> {

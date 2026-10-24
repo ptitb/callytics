@@ -42,3 +42,4 @@ asterisk/base/pjsip_relay.conf
 asterisk/base/pjsip_webrtc.conf
 asterisk/base/pjsip_callytics_vpn_*.conf
 asterisk/base/extensions_callytics_inbound.conf
+asterisk/base/rtp.conf

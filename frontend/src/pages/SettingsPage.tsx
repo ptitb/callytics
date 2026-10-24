@@ -6,6 +6,7 @@ import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
 import { useWindowWidth } from '../hooks/useWindowWidth';
 import { getSettings, updateSettings } from '../lib/api';
 import { getApiError } from '../lib/apiError';
+import { validateRtpRange } from '../lib/validation';
 import { useToast } from '../context/ToastContext';
 import styles from './SettingsPage.module.css';
 
@@ -16,6 +17,10 @@ export function SettingsPage() {
   const { showToast } = useToast();
   const saveTimerRef = useRef<number | null>(null);
   const [retentionDays, setRetentionDays] = useState('0');
+  const [rtpStart, setRtpStart] = useState('10000');
+  const [rtpEnd, setRtpEnd] = useState('20000');
+  const [rtpSaveState, setRtpSaveState] = useState<SaveState>('idle');
+  const [rtpError, setRtpError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -26,6 +31,8 @@ export function SettingsPage() {
       try {
         const settings = await getSettings();
         setRetentionDays(String(settings.recording_retention_days ?? 0));
+        setRtpStart(String(settings.rtp_port_start ?? 10000));
+        setRtpEnd(String(settings.rtp_port_end ?? 20000));
       } catch (error) {
         setLoadError(getApiError(error, 'failed to load settings'));
       } finally {
@@ -63,6 +70,30 @@ export function SettingsPage() {
     } catch (error) {
       setSaveState('failed');
       showToast(getApiError(error, 'failed to save settings'), 'error');
+    }
+  };
+
+  const handleSaveRtp = async () => {
+    setRtpError(null);
+    const start = Number(rtpStart);
+    const end = Number(rtpEnd);
+    const message = validateRtpRange(start, end);
+    if (message) {
+      setRtpSaveState('failed');
+      setRtpError(message);
+      return;
+    }
+
+    setRtpSaveState('saving');
+    try {
+      const settings = await updateSettings({ rtp_port_start: start, rtp_port_end: end });
+      setRtpStart(String(settings.rtp_port_start ?? start));
+      setRtpEnd(String(settings.rtp_port_end ?? end));
+      setRtpSaveState('saved');
+      window.setTimeout(() => setRtpSaveState('idle'), 2000);
+    } catch (error) {
+      setRtpSaveState('failed');
+      setRtpError(getApiError(error, 'failed to save RTP range'));
     }
   };
 
@@ -123,6 +154,47 @@ export function SettingsPage() {
               type="button"
             >
               {saveLabel}
+            </button>
+          </div>
+        </section>
+
+        <section className={styles.card}>
+          <div className={styles.cardHeader}>
+            <h2 className={styles.cardTitle}>Media (RTP)</h2>
+          </div>
+          <div className={styles.formField}>
+            <label className={styles.label} htmlFor="rtp-port-start">RTP port range</label>
+            <div className={styles.actionRow}>
+              <input
+                className={styles.input}
+                id="rtp-port-start"
+                onChange={(event) => setRtpStart(event.target.value)}
+                type="number"
+                value={rtpStart}
+              />
+              <input
+                aria-label="RTP end port"
+                className={styles.input}
+                id="rtp-port-end"
+                onChange={(event) => setRtpEnd(event.target.value)}
+                type="number"
+                value={rtpEnd}
+              />
+            </div>
+            <p className={styles.note}>
+              Start port must be even and the range needs at least 20 ports. Saving reloads rtp.conf in Asterisk without a restart.
+              Active calls keep their ports, new calls use the new range. Open the range in your firewall (UDP) and make sure it does not overlap other PBX software on this host.
+            </p>
+            {rtpError ? <p className={styles.note} role="alert">{rtpError}</p> : null}
+          </div>
+          <div className={styles.actionRow}>
+            <button
+              className={`${styles.primaryButton} ${rtpSaveState === 'failed' ? styles.failedButton : ''} btn-press`}
+              disabled={rtpSaveState === 'saving'}
+              onClick={() => void handleSaveRtp()}
+              type="button"
+            >
+              {rtpSaveState === 'saving' ? 'saving…' : rtpSaveState === 'saved' ? 'saved ✓' : rtpSaveState === 'failed' ? 'failed' : 'save'}
             </button>
           </div>
         </section>

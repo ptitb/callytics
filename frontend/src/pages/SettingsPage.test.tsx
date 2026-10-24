@@ -16,11 +16,15 @@ describe('SettingsPage coverage boost', () => {
       default_outbound_trunk_id: null,
       record_outbound_calls: false,
       recording_retention_days: 0,
+      rtp_port_start: 10000,
+      rtp_port_end: 20000,
     });
     vi.mocked(api.updateSettings).mockResolvedValue({
       default_outbound_trunk_id: null,
       record_outbound_calls: false,
       recording_retention_days: 0,
+      rtp_port_start: 10000,
+      rtp_port_end: 20000,
     });
   });
 

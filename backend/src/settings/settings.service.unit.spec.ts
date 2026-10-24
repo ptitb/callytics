@@ -56,6 +56,25 @@ describe('SettingsService', () => {
     });
   });
 
+  it('rejects an RTP range with an odd start port', async () => {
+    settingsRepository.findOne.mockResolvedValue(null);
+    settingsRepository.find.mockResolvedValue([]);
+    settingsRepository.create.mockImplementation((value: object) => value);
+
+    await expect(service.updateMany({ rtp_port_start: 10101, rtp_port_end: 10200 })).rejects.toThrow(
+      'RTP start port must be an even number',
+    );
+    expect(settingsRepository.save).not.toHaveBeenCalledWith(expect.objectContaining({ value: '10101' }));
+  });
+
+  it('rejects an RTP range where the end lies before the start', async () => {
+    settingsRepository.findOne.mockResolvedValue(null);
+    settingsRepository.find.mockResolvedValue([]);
+    settingsRepository.create.mockImplementation((value: object) => value);
+
+    await expect(service.updateMany({ rtp_port_start: 10200, rtp_port_end: 10100 })).rejects.toThrow(BadRequestException);
+  });
+
   it('rejects update when the default trunk does not exist', async () => {
     settingsRepository.findOne.mockImplementation(async ({ where }: { where: { key: string } }) => (
       where.key === 'default_outbound_trunk_id'

@@ -634,6 +634,8 @@ export interface SystemSettings {
   default_outbound_trunk_id: number | null;
   record_outbound_calls: boolean;
   recording_retention_days: number;
+  rtp_port_start: number;
+  rtp_port_end: number;
 }
 
 export type SettingsPatch = Partial<SystemSettings> & Record<string, SettingValue | undefined>;

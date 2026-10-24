@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, OnModuleInit } from '@nestjs/common';
 import { InjectDataSource, InjectRepository } from '@nestjs/typeorm';
 import { DataSource, Repository } from 'typeorm';
+import { getEnvRtpRange, validateRtpRange } from '../asterisk/rtp-range';
 import { runSqlMigrations } from '../db/run-sql-migrations';
 import { SipTrunkEntity } from '../trunks/entities/sip-trunk.entity';
 import { SettingsEntity } from './settings.entity';
@@ -9,11 +10,18 @@ export type SettingValue = boolean | number | string | null;
 
 export type SettingsMap = Record<string, SettingValue>;
 
-const SETTING_DEFAULTS: SettingsMap = {
-  default_outbound_trunk_id: null,
-  record_outbound_calls: false,
-  recording_retention_days: 0,
-};
+const RTP_SETTING_KEYS = ['rtp_port_start', 'rtp_port_end'] as const;
+
+function buildSettingDefaults(): SettingsMap {
+  const rtpRange = getEnvRtpRange();
+  return {
+    default_outbound_trunk_id: null,
+    record_outbound_calls: false,
+    recording_retention_days: 0,
+    rtp_port_start: rtpRange.start,
+    rtp_port_end: rtpRange.end,
+  };
+}
 
 @Injectable()
 export class SettingsService implements OnModuleInit {
@@ -95,10 +103,26 @@ export class SettingsService implements OnModuleInit {
 
   async updateMany(patch: Record<string, SettingValue>): Promise<SettingsMap> {
     const entries = Object.entries(patch);
+    if (RTP_SETTING_KEYS.some((key) => key in patch)) {
+      await this.validateRtpPatch(patch);
+    }
     for (const [key, value] of entries) {
       await this.set(key, value);
     }
     return this.getAll();
+  }
+
+  private async validateRtpPatch(patch: Record<string, SettingValue>): Promise<void> {
+    const current = await this.getAll();
+    const start = 'rtp_port_start' in patch ? patch.rtp_port_start : current.rtp_port_start;
+    const end = 'rtp_port_end' in patch ? patch.rtp_port_end : current.rtp_port_end;
+    if (typeof start !== 'number' || typeof end !== 'number') {
+      throw new BadRequestException('rtp_port_start and rtp_port_end must be numbers');
+    }
+    const message = validateRtpRange({ start, end });
+    if (message) {
+      throw new BadRequestException(message);
+    }
   }
 
   async getDefaultTrunk(): Promise<{ data: SipTrunkEntity | null }> {
@@ -129,7 +153,7 @@ export class SettingsService implements OnModuleInit {
 
   private async seedDefaults(): Promise<void> {
     try {
-      for (const [key, value] of Object.entries(SETTING_DEFAULTS)) {
+      for (const [key, value] of Object.entries(buildSettingDefaults())) {
         const existing = await this.settingsRepository.findOne({ where: { key } });
         if (!existing) {
           await this.settingsRepository.save(this.settingsRepository.create({
@@ -176,6 +200,13 @@ export class SettingsService implements OnModuleInit {
       return this.serializeValue(value);
     }
 
+    if (key === 'rtp_port_start' || key === 'rtp_port_end') {
+      if (typeof value !== 'number' || !Number.isInteger(value)) {
+        throw new BadRequestException(`${key} must be a whole number`);
+      }
+      return this.serializeValue(value);
+    }
+
     if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
       throw new BadRequestException(`unsupported value type for setting ${key}`);
     }
@@ -199,6 +230,11 @@ export class SettingsService implements OnModuleInit {
     if (key === 'recording_retention_days') {
       const parsed = Number(value ?? '');
       return Number.isInteger(parsed) && parsed >= 0 ? parsed : 0;
+    }
+
+    if (key === 'rtp_port_start' || key === 'rtp_port_end') {
+      const parsed = Number(value ?? '');
+      return Number.isInteger(parsed) && parsed > 0 ? parsed : buildSettingDefaults()[key];
     }
 
     return value;

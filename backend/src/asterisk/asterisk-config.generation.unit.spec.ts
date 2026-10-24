@@ -3,6 +3,7 @@ import {
   parsePjsipIdentifies,
 } from "./asterisk-config.service";
 import { SipTrunkEntity } from "../trunks/entities/sip-trunk.entity";
+import { buildRtpConfig, getEnvRtpRange, validateRtpRange } from "./rtp-range";
 import { InboundRouteEntity } from "../inbound-routes/entities/inbound-route.entity";
 
 // Documentation address ranges (RFC 5737), not real provider addresses.
@@ -126,5 +127,34 @@ describe("parsePjsipIdentifies", () => {
         matches: ["192.0.2.10/32", "198.51.100.0/24"],
       },
     ]);
+  });
+});
+
+describe("rtp range", () => {
+  it("generates rtp.conf for the configured range", () => {
+    const output = buildRtpConfig({ start: 10100, end: 10120 });
+    expect(output).toContain("rtpstart=10100");
+    expect(output).toContain("rtpend=10120");
+  });
+
+  it("reads the initial range from the environment", () => {
+    expect(getEnvRtpRange({ RTP_PORT_START: "10100", RTP_PORT_END: "10120" } as NodeJS.ProcessEnv)).toEqual({
+      start: 10100,
+      end: 10120,
+    });
+  });
+
+  it("falls back to 10000-20000 for an invalid environment range", () => {
+    expect(getEnvRtpRange({ RTP_PORT_START: "10101", RTP_PORT_END: "10120" } as NodeJS.ProcessEnv)).toEqual({
+      start: 10000,
+      end: 20000,
+    });
+    expect(getEnvRtpRange({} as NodeJS.ProcessEnv)).toEqual({ start: 10000, end: 20000 });
+  });
+
+  it("validates ranges", () => {
+    expect(validateRtpRange({ start: 10100, end: 10120 })).toBeNull();
+    expect(validateRtpRange({ start: 10100, end: 10110 })).not.toBeNull();
+    expect(validateRtpRange({ start: 10101, end: 10200 })).not.toBeNull();
   });
 });

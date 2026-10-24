@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findInvalidIpMatches, isValidIpMatch, normalizePhoneNumber, parseIpMatchInput } from './validation';
+import { findInvalidIpMatches, validateRtpRange, isValidIpMatch, normalizePhoneNumber, parseIpMatchInput } from './validation';
 
 describe('normalizePhoneNumber', () => {
   it('removes spaces and separators', () => {
@@ -35,5 +35,23 @@ describe('IP match validation', () => {
 
   it('parses mixed separators and removes duplicates', () => {
     expect(parseIpMatchInput('192.0.2.1, 192.0.2.2\n192.0.2.1')).toEqual(['192.0.2.1', '192.0.2.2']);
+  });
+});
+
+describe('validateRtpRange', () => {
+  it('accepts a valid range', () => {
+    expect(validateRtpRange(10100, 10120)).toBeNull();
+  });
+
+  it('rejects an odd start port', () => {
+    expect(validateRtpRange(10101, 10200)).toMatch(/even/);
+  });
+
+  it('rejects a range that is too small', () => {
+    expect(validateRtpRange(10100, 10110)).toMatch(/at least 20/);
+  });
+
+  it('rejects ports out of bounds', () => {
+    expect(validateRtpRange(100, 5000)).toMatch(/between/);
   });
 });

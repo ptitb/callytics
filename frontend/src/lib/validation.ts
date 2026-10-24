@@ -38,3 +38,20 @@ export function parseIpMatchInput(text: string): string[] {
 export function findInvalidIpMatches(entries: string[]): string[] {
   return entries.filter((entry) => !isValidIpMatch(entry));
 }
+
+/** Mirrors the backend RTP range rule. Returns an error message or null. */
+export function validateRtpRange(start: number, end: number): string | null {
+  if (!Number.isInteger(start) || !Number.isInteger(end)) {
+    return 'RTP ports must be whole numbers';
+  }
+  if (start < 1024 || end > 65535) {
+    return 'RTP ports must be between 1024 and 65535';
+  }
+  if (start % 2 !== 0) {
+    return 'RTP start port must be an even number';
+  }
+  if (end - start < 20) {
+    return 'RTP range must contain at least 20 ports';
+  }
+  return null;
+}
