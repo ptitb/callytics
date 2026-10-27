@@ -5,6 +5,7 @@ import { runSqlMigrations } from '../db/run-sql-migrations';
 import { AppLogger } from '../logger/app-logger';
 import { CreateFlowDto } from './dto/create-flow.dto';
 import { UpdateFlowDto } from './dto/update-flow.dto';
+import { buildExportDocument, FlowExportDocument, FlowExportSource, ParsedFlowDocument, ParsedFlowDocumentSubflow } from './flow-document';
 import { CallFlowEntity } from './entities/call-flow.entity';
 import { FlowEdgeEntity } from './entities/flow-edge.entity';
 import { FlowNodeEntity } from './entities/flow-node.entity';
@@ -614,57 +615,164 @@ export class FlowsService implements OnModuleInit {
   }
 
   async create(dto: CreateFlowDto): Promise<{ data: FlowDetailResponse }> {
-    return this.dataSource.transaction(async (manager) => {
-      const slug = await this.ensureUniqueSlug(manager.getRepository(CallFlowEntity), dto.slug?.trim() || this.slugify(dto.name));
-      const normalizedParentBranchKey = await this.normalizeParentBranchKeyForPersist(
-        manager,
-        dto.parentFlowId ?? null,
-        dto.parentNodeKey ?? null,
-        dto.parentBranchKey ?? null,
-      );
+    return this.dataSource.transaction((manager) => this.createWithManager(manager, dto));
+  }
 
-      const flow = manager.create(CallFlowEntity, {
-        name: dto.name,
-        description: dto.description ?? null,
-        slug,
-        status: 'published',
-        entryType: dto.parentFlowId ? 'subflow' : 'default',
-        entryValue: null,
-        currentVersionId: null,
-        parentFlowId: dto.parentFlowId ?? null,
-        parentNodeKey: dto.parentNodeKey ?? null,
-        parentBranchKey: normalizedParentBranchKey,
-        isTemplate: false,
-        templateDescription: null,
-        templateCategory: null,
-      });
-      const savedFlow = await manager.save(CallFlowEntity, flow);
-      const normalizedNodes = await this.normalizeNodesForSave(manager, savedFlow, dto.nodes);
-      validateNodesConfig(normalizedNodes, { isSubflow: Boolean(savedFlow.parentFlowId) });
-      validateEdgesConfig(dto.edges, normalizedNodes);
+  /** Same as {@link create}, but runs inside the caller's transaction. */
+  private async createWithManager(
+    manager: DataSource['manager'],
+    dto: CreateFlowDto,
+  ): Promise<{ data: FlowDetailResponse }> {
+    const slug = await this.ensureUniqueSlug(manager.getRepository(CallFlowEntity), dto.slug?.trim() || this.slugify(dto.name));
+    const normalizedParentBranchKey = await this.normalizeParentBranchKeyForPersist(
+      manager,
+      dto.parentFlowId ?? null,
+      dto.parentNodeKey ?? null,
+      dto.parentBranchKey ?? null,
+    );
 
-      const initialSnapshot = await this.buildSnapshotForSave(savedFlow, normalizedNodes, dto.edges, manager);
-      const savedVersion = await this.createStoredVersion(
-        manager,
-        savedFlow.id,
-        1,
-        initialSnapshot,
-        dto.versionMessage,
-      );
-
-      savedFlow.currentVersionId = savedVersion.id;
-      savedFlow.updatedAt = new Date();
-      await manager.save(CallFlowEntity, savedFlow);
-
-      await this.saveNodesAndEdges(manager, savedVersion.id, normalizedNodes, dto.edges);
-
-      const persistedFlow = await manager.findOneOrFail(CallFlowEntity, { where: { id: savedFlow.id } });
-      const persistedVersion = await manager.findOneOrFail(FlowVersionEntity, { where: { id: savedVersion.id } });
-
-      return {
-        data: await this.buildFlowDetail(persistedFlow, persistedVersion, manager),
-      };
+    const flow = manager.create(CallFlowEntity, {
+      name: dto.name,
+      description: dto.description ?? null,
+      slug,
+      status: 'published',
+      entryType: dto.parentFlowId ? 'subflow' : 'default',
+      entryValue: null,
+      currentVersionId: null,
+      parentFlowId: dto.parentFlowId ?? null,
+      parentNodeKey: dto.parentNodeKey ?? null,
+      parentBranchKey: normalizedParentBranchKey,
+      isTemplate: false,
+      templateDescription: null,
+      templateCategory: null,
     });
+    const savedFlow = await manager.save(CallFlowEntity, flow);
+    const normalizedNodes = await this.normalizeNodesForSave(manager, savedFlow, dto.nodes);
+    validateNodesConfig(normalizedNodes, { isSubflow: Boolean(savedFlow.parentFlowId) });
+    validateEdgesConfig(dto.edges, normalizedNodes);
+
+    const initialSnapshot = await this.buildSnapshotForSave(savedFlow, normalizedNodes, dto.edges, manager);
+    const savedVersion = await this.createStoredVersion(
+      manager,
+      savedFlow.id,
+      1,
+      initialSnapshot,
+      dto.versionMessage,
+    );
+
+    savedFlow.currentVersionId = savedVersion.id;
+    savedFlow.updatedAt = new Date();
+    await manager.save(CallFlowEntity, savedFlow);
+
+    await this.saveNodesAndEdges(manager, savedVersion.id, normalizedNodes, dto.edges);
+
+    const persistedFlow = await manager.findOneOrFail(CallFlowEntity, { where: { id: savedFlow.id } });
+    const persistedVersion = await manager.findOneOrFail(FlowVersionEntity, { where: { id: savedVersion.id } });
+
+    return {
+      data: await this.buildFlowDetail(persistedFlow, persistedVersion, manager),
+    };
+  }
+
+  /**
+   * Exports a flow as a portable document (no database ids), using its current version.
+   * A submenu id exports that submenu as a standalone flow without its parent link.
+   */
+  async exportFlow(id: number): Promise<FlowExportDocument> {
+    const flow = await this.callFlowsRepository.findOne({ where: { id } });
+    if (!flow) {
+      throw new NotFoundException(`Flow ${id} not found`);
+    }
+    const source = await this.buildExportSource(flow, this.dataSource.manager, new Set<number>(), 0);
+    return buildExportDocument(source);
+  }
+
+  private async buildExportSource(
+    flow: CallFlowEntity,
+    manager: DataSource['manager'],
+    visited: Set<number>,
+    depth: number,
+  ): Promise<FlowExportSource> {
+    const { nodes, edges } = await this.getFlowWithNodesEdges(flow.id, manager);
+    const source: FlowExportSource = {
+      name: flow.name,
+      description: flow.description,
+      nodes,
+      edges,
+      subflows: [],
+    };
+    if (depth >= 10 || visited.has(flow.id)) {
+      return source;
+    }
+
+    const nextVisited = new Set(visited);
+    nextVisited.add(flow.id);
+    const childFlows = await this.getDirectSubflows(flow.id, manager);
+    for (const node of nodes.filter((item) => item.type === 'menu')) {
+      const entries = this.buildMenuBranchFlowEntries(
+        { nodeKey: node.nodeKey, label: node.label, subflowId: node.subflowId, configJson: node.config },
+        childFlows,
+      );
+      for (const [branchKey, childFlow] of entries) {
+        source.subflows!.push({
+          parentNodeKey: node.nodeKey,
+          parentBranchKey: branchKey,
+          flow: await this.buildExportSource(childFlow, manager, nextVisited, depth + 1),
+        });
+      }
+    }
+    return source;
+  }
+
+  /**
+   * Creates a flow and its nested submenus from a parsed import document inside the
+   * caller's transaction. Returns the id and name of the new root flow.
+   */
+  async createFromDocument(
+    manager: DataSource['manager'],
+    document: ParsedFlowDocument,
+  ): Promise<{ id: number; name: string }> {
+    const versionMessage = 'Imported from JSON';
+    const root = await this.createWithManager(manager, {
+      name: document.name,
+      description: document.description,
+      versionMessage,
+      nodes: document.nodes,
+      edges: document.edges,
+    });
+    const rootId = root.data.id;
+
+    if (document.subflows.length > 0) {
+      await this.createDocumentSubflows(manager, rootId, document.subflows, versionMessage);
+
+      // The root snapshot was built before its submenus existed; rebuild it with the full tree.
+      const rootFlow = await manager.findOneOrFail(CallFlowEntity, { where: { id: rootId } });
+      const rootVersion = await manager.findOneOrFail(FlowVersionEntity, { where: { id: rootFlow.currentVersionId! } });
+      rootVersion.snapshot = await this.buildFullTreeSnapshot(rootId, manager) as unknown as Record<string, unknown>;
+      await manager.save(FlowVersionEntity, rootVersion);
+    }
+
+    return { id: rootId, name: root.data.name };
+  }
+
+  private async createDocumentSubflows(
+    manager: DataSource['manager'],
+    parentFlowId: number,
+    subflows: ParsedFlowDocumentSubflow[],
+    versionMessage: string,
+  ): Promise<void> {
+    for (const subflow of subflows) {
+      const created = await this.createWithManager(manager, {
+        name: subflow.name,
+        versionMessage,
+        nodes: subflow.nodes,
+        edges: subflow.edges,
+        parentFlowId,
+        parentNodeKey: subflow.parentNodeKey,
+        parentBranchKey: subflow.parentBranchKey,
+      });
+      await this.createDocumentSubflows(manager, created.data.id, subflow.subflows, versionMessage);
+    }
   }
 
   async update(id: number, dto: UpdateFlowDto): Promise<{ data: FlowDetailResponse }> {
@@ -2046,9 +2154,10 @@ export class FlowsService implements OnModuleInit {
   private async ensureUniqueSlug(repository: Repository<CallFlowEntity>, candidate: string): Promise<string> {
     const base = candidate || 'untitled';
     let slug = base;
-    const existing = await repository.findOne({ where: { slug } });
-    if (existing) {
-      slug = `${base}-${Date.now().toString(36)}`;
+    let attempt = 0;
+    while (await repository.findOne({ where: { slug } })) {
+      attempt += 1;
+      slug = `${base}-${Date.now().toString(36)}${attempt > 1 ? `-${attempt}` : ''}`;
     }
     return slug;
   }

@@ -49,6 +49,12 @@ export class FlowsController {
     return this.flowsService.getBreadcrumb(id);
   }
 
+  /** Portable JSON document of the flow (current version, nested submenus, no database ids). */
+  @Get(':id/export')
+  exportFlow(@Param('id', ParseIntPipe) id: number) {
+    return this.flowsService.exportFlow(id);
+  }
+
   @Get(':id/tree')
   findTree(@Param('id', ParseIntPipe) id: number) {
     return this.flowsService.getFlowTree(id);

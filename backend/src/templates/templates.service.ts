@@ -1,10 +1,30 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
+import {
+  collectConfigReferences,
+  ConfigReference,
+  ConfigReferenceKind,
+  formatMissingReferenceWarning,
+  parseFlowDocument,
+  ParsedFlowDocument,
+} from '../flows/flow-document';
+import { FlowsService } from '../flows/flows.service';
+
+const REFERENCE_TABLES: Record<ConfigReferenceKind, string> = {
+  'audio file': 'audio_files',
+  trunk: 'sip_trunks',
+  queue: 'queues',
+  operator: 'operators',
+  extension: 'sip_extensions',
+};
 
 @Injectable()
 export class TemplatesService {
-  constructor(@InjectDataSource() private readonly dataSource: DataSource) {}
+  constructor(
+    @InjectDataSource() private readonly dataSource: DataSource,
+    private readonly flowsService: FlowsService,
+  ) {}
 
   async listTemplates() {
     const rows = await this.dataSource.query(
@@ -38,6 +58,57 @@ export class TemplatesService {
         nodeCount: Number(row.nodeCount || 0),
       })),
     };
+  }
+
+  /**
+   * Imports a flow from an untrusted JSON document in a single transaction: either the
+   * flow with all its submenus is created, or nothing is. References to rows that do not
+   * exist on this installation (audio files, trunks, queues, ...) only produce warnings.
+   */
+  async importDocument(raw: unknown): Promise<{ id: number; name: string; warnings: string[] }> {
+    const document = parseFlowDocument(raw);
+
+    return this.dataSource.transaction(async (manager) => {
+      const created = await this.flowsService.createFromDocument(manager, document);
+      const warnings = await this.findMissingReferenceWarnings(manager, document);
+      return { id: created.id, name: created.name, warnings };
+    });
+  }
+
+  private async findMissingReferenceWarnings(
+    manager: DataSource['manager'],
+    document: ParsedFlowDocument,
+  ): Promise<string[]> {
+    const entries: Array<{ flowName: string; reference: ConfigReference }> = [];
+    const visit = (flowName: string, nodes: ParsedFlowDocument['nodes'], subflows: ParsedFlowDocument['subflows']): void => {
+      for (const reference of collectConfigReferences(nodes)) {
+        entries.push({ flowName, reference });
+      }
+      for (const subflow of subflows) {
+        visit(subflow.name, subflow.nodes, subflow.subflows);
+      }
+    };
+    visit(document.name, document.nodes, document.subflows);
+
+    const idsByKind = new Map<ConfigReferenceKind, Set<number>>();
+    for (const { reference } of entries) {
+      const ids = idsByKind.get(reference.kind) ?? new Set<number>();
+      ids.add(reference.id);
+      idsByKind.set(reference.kind, ids);
+    }
+
+    const existing = new Map<ConfigReferenceKind, Set<number>>();
+    for (const [kind, ids] of idsByKind) {
+      const rows: Array<{ id: number | string }> = await manager.query(
+        `SELECT id FROM ${REFERENCE_TABLES[kind]} WHERE id = ANY($1::bigint[])`,
+        [Array.from(ids)],
+      );
+      existing.set(kind, new Set(rows.map((row) => Number(row.id))));
+    }
+
+    return entries
+      .filter(({ reference }) => !existing.get(reference.kind)?.has(reference.id))
+      .map(({ flowName, reference }) => formatMissingReferenceWarning(reference, flowName));
   }
 
   async importTemplate(templateId: number): Promise<{ id: number; name: string }> {
