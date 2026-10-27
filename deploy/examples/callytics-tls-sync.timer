@@ -1,0 +1,11 @@
+# Runs callytics-tls-sync.service hourly. Caddy renews about 30 days before
+# expiry, so an hour of delay does not matter.
+[Unit]
+Description=Hourly copy of the Caddy SIP certificate for Callytics
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=1h
+
+[Install]
+WantedBy=timers.target
