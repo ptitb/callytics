@@ -37,6 +37,9 @@ Description: Get parent/child breadcrumb context for subflows.
 `GET /flows/:id/tree`
 Description: Get flow tree with subflow relationships.
 
+`GET /flows/:id/export`
+Description: Export the current version of a flow as a portable JSON document (format `callytics-flow`, version 1). Nested submenus are included under `subflows`, linked by `parentNodeKey` and `parentBranchKey`. The document contains no database ids. A submenu id exports that submenu as a standalone flow.
+
 ## Extensions
 
 `GET /extensions`
@@ -371,6 +374,9 @@ Description: List flow templates.
 
 `POST /templates/:id/import`
 Description: Import template into flows.
+
+`POST /templates/import`
+Description: Create a flow from a JSON document in the body (export format, a minimal `{ name, nodes, edges }` document, or the response of `GET /flows/:id`). Unknown fields such as ids are ignored. The flow and all its submenus are created in one transaction; invalid documents return 400 with the reason. Returns `{ "data": { "id", "name", "warnings" } }`, where `warnings` lists references to audio files, trunks, queues, operators or extensions that do not exist on this installation.
 
 ### Preflight
 

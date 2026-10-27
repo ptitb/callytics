@@ -217,6 +217,12 @@ Controleer onder Settings > Media (RTP) dat het bereik 10100-10120 is. Een wijzi
 3. Kies een sterk wachtwoord. De extensie gebruikt `transport-tls` met `media_encryption = sdes` en `media_encryption_optimistic = no`: zonder SRTP komt er geen gesprek tot stand.
 4. De QR-inhoud en de URI in de lijst zijn `sip:<gebruiker>@sip.example.com:5081;transport=tls`.
 
+**Flows verplaatsen naar een andere installatie**
+
+1. Klik op de bron-installatie bij Configure > Flow Builder op `export json` (of in de flow-editor rechtsboven). Je krijgt een `.json`-bestand met de laatst opgeslagen versie, inclusief submenu's.
+2. Open op de nieuwe installatie Configure > Templates, kies `Import JSON` en selecteer het bestand. Er wordt altijd een nieuwe flow aangemaakt.
+3. Audiobestanden, trunks en wachtrijen worden met een nummer (id) in de flow bewaard en bestaan op de nieuwe installatie meestal niet onder hetzelfde nummer. Callytics toont daarvoor waarschuwingen. Open de flow, kies de juiste audiobestanden, trunks en wachtrijen en sla op voordat je de flow voor live gesprekken gebruikt.
+
 ## 9. Groundwire instellen
 
 Maak in Groundwire een SIP-account met deze waarden:

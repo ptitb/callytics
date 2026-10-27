@@ -15,6 +15,51 @@ Before a flow is published, Callytics validates the nodes and connections to cat
 - Validation before publish
 - Canvas minimap for navigating large flows
 - Auto-layout for organizing complex diagrams
+- Export and import of flows as JSON files
+
+## Export and import
+
+A flow can be exported as a JSON file and imported again on the same or another Callytics installation.
+
+- **Export:** use `export json` in the flow list or in the flow editor toolbar. The file contains the last saved version of the flow, including all nested submenus. Unsaved changes in the editor are not exported. Exporting a submenu directly produces a standalone flow without its parent link.
+- **Import:** open Configure > Templates, choose `Import JSON`, then select a `.json` file (or drop it on the panel) or paste the JSON. The import always creates a new flow, so duplicate names are allowed. If the document has no `name`, the flow is called "Imported Flow". The whole import is one step: if any part is invalid, nothing is created.
+- **Accepted input:** files exported by Callytics, the minimal example below, and the response of `GET /flows/:id`. Fields that are not part of the format, such as database ids, are ignored.
+
+### Format
+
+```json
+{
+  "format": "callytics-flow",
+  "version": 1,
+  "exportedAt": "2026-01-01T12:00:00.000Z",
+  "name": "My Flow",
+  "description": "Optional text",
+  "nodes": [
+    { "nodeKey": "start", "type": "start", "label": "Start", "config": {}, "positionX": 100, "positionY": 100 },
+    { "nodeKey": "menu-1", "type": "menu", "label": "Main menu", "config": { "branches": ["1"], "prompt_audio_file_id": 4 }, "positionX": 100, "positionY": 250 }
+  ],
+  "edges": [
+    { "sourceNodeKey": "start", "targetNodeKey": "menu-1", "branchKey": "default" }
+  ],
+  "subflows": [
+    {
+      "parentNodeKey": "menu-1",
+      "parentBranchKey": "1",
+      "name": "Sales submenu",
+      "nodes": [{ "nodeKey": "start", "type": "start", "config": {}, "positionX": 0, "positionY": 0 }],
+      "edges": []
+    }
+  ]
+}
+```
+
+Only `nodes` is required, and `format` and `version` may be left out. If they are present they must be `callytics-flow` and `1`. Optional node fields are `label`, `config`, `positionX`, `positionY` and `groupId`; optional edge fields are `branchKey`, `condition`, `sourceHandle` and `targetHandle`.
+
+A submenu is a separate flow. In the file it is nested under `subflows` and linked to its menu only by `parentNodeKey` (a menu node of the parent) and `parentBranchKey` (a digit, `*` or `#`). Submenus can be nested. The file contains no database ids.
+
+### References and warnings
+
+Node configs refer to other items by id: audio files, trunks, queues, operators and extensions. These ids belong to the installation the flow was exported from. On import Callytics checks whether each referenced item exists on the target installation. Missing items do not stop the import; they are listed as warnings on the Templates page, and the flow is still created. Open the flow afterwards and select the correct audio files, trunks and queues before publishing it for live calls.
 
 ## Node Reference
 
