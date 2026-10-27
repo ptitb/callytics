@@ -1,13 +1,12 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState, type ChangeEvent, type DragEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ConfirmDialog } from '../components/ConfirmDialog/ConfirmDialog';
 import { ErrorMessage } from '../components/common/ErrorMessage';
 import { Loading } from '../components/common/Loading';
 import { PageLayout } from '../components/common/PageLayout';
 import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
-import type { SaveFlowPayload } from '../lib/api';
 import { getApiError } from '../lib/apiError';
-import { createFlow, getFlow, listTemplates } from '../lib/api';
+import { getFlow, importFlowDocument, listTemplates } from '../lib/api';
 import { useWindowWidth } from '../hooks/useWindowWidth';
 import type { TemplateItem } from '../types';
 import styles from './TemplatesPage.module.css';
@@ -38,6 +37,8 @@ export function TemplatesPage() {
   const [importJsonBusy, setImportJsonBusy] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
   const [importJsonError, setImportJsonError] = useState<string | null>(null);
+  const [importResult, setImportResult] = useState<{ id: number; name: string; warnings: string[] } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [showGuide, setShowGuide] = useState(false);
   const [openGuideStep, setOpenGuideStep] = useState<number | null>(null);
   const [showExpectedFormat, setShowExpectedFormat] = useState(false);
@@ -94,39 +95,54 @@ export function TemplatesPage() {
     setImportJsonText('');
   };
 
+  const readJsonFile = (file: File) => {
+    const reader = new FileReader();
+    reader.onload = () => {
+      setImportJsonText(typeof reader.result === 'string' ? reader.result : '');
+      setImportJsonError(null);
+    };
+    reader.onerror = () => setImportJsonError('Could not read the selected file');
+    reader.readAsText(file);
+  };
+
+  const handleFileSelected = (event: ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file) readJsonFile(file);
+    // Allow selecting the same file again after an edit.
+    event.target.value = '';
+  };
+
+  const handleFileDrop = (event: DragEvent<HTMLElement>) => {
+    event.preventDefault();
+    const file = event.dataTransfer.files?.[0];
+    if (file) readJsonFile(file);
+  };
+
   const handleImportJson = async () => {
     setImportJsonError(null);
     let parsed: unknown;
     try {
       parsed = JSON.parse(importJsonText);
-    } catch {
-      setImportJsonError('Invalid flow JSON — must contain nodes and edges arrays');
-      return;
-    }
-
-    if (!parsed || typeof parsed !== 'object') {
-      setImportJsonError('Invalid flow JSON — must contain nodes and edges arrays');
-      return;
-    }
-
-    const parsedFlow = parsed as Record<string, unknown>;
-    if (!Array.isArray(parsedFlow.nodes) || !Array.isArray(parsedFlow.edges)) {
-      setImportJsonError('Invalid flow JSON — must contain nodes and edges arrays');
+    } catch (error) {
+      setImportJsonError(`Invalid JSON: ${error instanceof Error ? error.message : 'could not parse the text'}`);
       return;
     }
 
     setImportJsonBusy(true);
     try {
-      const payload: SaveFlowPayload = {
-        name: 'Imported Flow',
-        nodes: parsedFlow.nodes as SaveFlowPayload['nodes'],
-        edges: parsedFlow.edges as SaveFlowPayload['edges'],
-      };
-      const response = await createFlow(payload);
-      closeImportJsonPanel();
-      navigate(`/flows/${response.data.id}`);
-    } catch {
-      setImportJsonError('Failed to import flow — check JSON format and try again');
+      const response = await importFlowDocument(parsed);
+      const { id, name, warnings } = response.data;
+      if (warnings.length === 0) {
+        closeImportJsonPanel();
+        navigate(`/flows/${id}`);
+        return;
+      }
+      // Keep the page open so the warnings stay visible until the user continues.
+      setImportJsonOpen(false);
+      setImportJsonText('');
+      setImportResult({ id, name, warnings });
+    } catch (error) {
+      setImportJsonError(getApiError(error, 'Failed to import flow'));
     } finally {
       setImportJsonBusy(false);
     }
@@ -143,7 +159,10 @@ export function TemplatesPage() {
         {!loading && !loadError ? (
           <button
             className={styles.importJsonHeaderButton}
-            onClick={() => setImportJsonOpen(true)}
+            onClick={() => {
+              setImportResult(null);
+              setImportJsonOpen(true);
+            }}
             type="button"
           >
             Import JSON
@@ -159,7 +178,7 @@ export function TemplatesPage() {
         <div className={styles.contentFadeIn}>
         <>
           {importJsonOpen ? (
-            <section className={styles.importJsonPanel}>
+            <section className={styles.importJsonPanel} onDragOver={(event) => event.preventDefault()} onDrop={handleFileDrop}>
               <button
                 aria-label="Close import panel"
                 className={styles.panelCloseButton}
@@ -170,6 +189,25 @@ export function TemplatesPage() {
               </button>
 
               <h2 className={styles.panelTitle}>Import flow from JSON</h2>
+
+              <div className={styles.fileRow}>
+                <input
+                  accept=".json,application/json"
+                  aria-label="Choose JSON file"
+                  className={styles.fileInput}
+                  onChange={handleFileSelected}
+                  ref={fileInputRef}
+                  type="file"
+                />
+                <button
+                  className={styles.modalCancelButton}
+                  onClick={() => fileInputRef.current?.click()}
+                  type="button"
+                >
+                  Choose .json file
+                </button>
+                <span className={styles.fileHint}>or drop a file here, or paste the JSON below</span>
+              </div>
 
               <textarea
                 className={styles.jsonTextarea}
@@ -207,6 +245,12 @@ export function TemplatesPage() {
   ]
 }`}</pre>
               ) : null}
+              {showExpectedFormat ? (
+                <p className={styles.fileHint}>
+                  Files downloaded with &quot;export json&quot; (format <code>callytics-flow</code>) also
+                  contain submenus and are imported as a whole.
+                </p>
+              ) : null}
 
               <div className={styles.panelActions}>
                 <button
@@ -224,6 +268,40 @@ export function TemplatesPage() {
                   type="button"
                 >
                   {importJsonBusy ? 'Importing...' : 'Import'}
+                </button>
+              </div>
+            </section>
+          ) : null}
+
+          {importResult ? (
+            <section className={styles.importResult} role="status">
+              <h2 className={styles.panelTitle}>
+                Imported &quot;{importResult.name}&quot; with {importResult.warnings.length}{' '}
+                {importResult.warnings.length === 1 ? 'warning' : 'warnings'}
+              </h2>
+              <p className={styles.importResultText}>
+                The flow was created. These references do not exist on this installation. Open the
+                flow and select the right audio files, trunks or queues.
+              </p>
+              <ul className={styles.warningList}>
+                {importResult.warnings.map((warning) => (
+                  <li key={warning}>{warning}</li>
+                ))}
+              </ul>
+              <div className={styles.panelActions}>
+                <button
+                  className={styles.modalCancelButton}
+                  onClick={() => setImportResult(null)}
+                  type="button"
+                >
+                  Dismiss
+                </button>
+                <button
+                  className={styles.modalImportButton}
+                  onClick={() => navigate(`/flows/${importResult.id}`)}
+                  type="button"
+                >
+                  Open flow
                 </button>
               </div>
             </section>
@@ -381,9 +459,10 @@ export function TemplatesPage() {
                   {openGuideStep === 3 ? (
                     <div className={styles.accordionBody}>
                       <p>
-                        Paste the exported JSON into the Import JSON panel on this page. The JSON
-                        must contain a <code>nodes</code> array and an <code>edges</code> array at
-                        the minimum.
+                        Choose the exported file or paste its JSON in the Import JSON panel on
+                        this page. The JSON must contain a <code>nodes</code> array at the minimum.
+                        Audio files, trunks and queues are referenced by id; the import warns about
+                        ids that do not exist on this installation.
                       </p>
                     </div>
                   ) : null}

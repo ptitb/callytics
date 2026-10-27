@@ -377,3 +377,47 @@
     overflow-x: auto;
   }
 }
+
+.fileRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.fileInput {
+  display: none;
+}
+
+.fileHint {
+  margin: 0;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.importResult {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px solid var(--color-warning, var(--border-strong));
+  border-radius: var(--radius-lg);
+  background: transparent;
+  padding: 16px;
+}
+
+.importResultText {
+  margin: 0;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.warningList {
+  margin: 0;
+  padding-left: 18px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+}
