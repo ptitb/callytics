@@ -7,6 +7,7 @@ import { ConfirmDialog } from '../components/ConfirmDialog/ConfirmDialog';
 import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
 import { deleteFlow, listFlows } from '../lib/api';
 import { getApiError } from '../lib/apiError';
+import { downloadFlowExport } from '../lib/flowExport';
 import { formatDateTime } from '../lib/time';
 import { useWindowWidth } from '../hooks/useWindowWidth';
 import { useToast } from '../context/ToastContext';
@@ -61,6 +62,14 @@ export function FlowsPage() {
   useEffect(() => {
     void loadFlows(page, limit);
   }, [page, limit]);
+
+  const handleExport = async (flow: FlowSummary) => {
+    try {
+      await downloadFlowExport(flow.id, flow.name);
+    } catch (error) {
+      showToast(getApiError(error, 'failed to export flow'), 'error');
+    }
+  };
 
   const handleCreate = async () => {
     navigate('/flows/new');
@@ -127,6 +136,7 @@ export function FlowsPage() {
                         ) : (
                           <>
                             <button className={`${styles.secondaryButton} ${styles.editButton}`} onClick={() => navigate(`/flows/${flow.id}`)} type="button">edit</button>
+                            <button className={`${styles.secondaryButton} ${styles.editButton}`} onClick={() => void handleExport(flow)} type="button">export json</button>
                             <button className={`${styles.secondaryButton} ${styles.deleteButton}`} onClick={() => setConfirmId(flow.id)} type="button">delete</button>
                             {failedDeleteId === flow.id ? <div className={styles.failedText}>failed to delete</div> : null}
                           </>

@@ -1,4 +1,5 @@
 import { getApiError } from '../lib/apiError';
+import { downloadFlowExport } from '../lib/flowExport';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
 import ReactFlow, {
@@ -923,6 +924,15 @@ export function FlowEditorPage() {
     }
   }, [currentFlowId, flow, handleOpenSubmenu, hasUnsavedChanges, incrementTreeRefreshKey, isDraft, nodes, saveFlow]);
 
+  const handleExportJson = async () => {
+    if (!flow || isDraft) return;
+    try {
+      await downloadFlowExport(flow.id, flow.slug || flow.name);
+    } catch (error) {
+      showEditorNotice(getApiError(error, 'failed to export flow'));
+    }
+  };
+
   const handleRenameSubmenu = useCallback(async (flowId: number, name: string) => {
     const trimmedName = name.trim();
     if (!trimmedName) {
@@ -1380,6 +1390,15 @@ export function FlowEditorPage() {
             versions
           </button>
           <button className={styles.secondaryButton} onClick={() => setSimulatorOpen((current) => !current)} type="button">simulate</button>
+          <button
+            className={styles.secondaryButton}
+            disabled={!flow || isDraft}
+            onClick={() => { void handleExportJson(); }}
+            type="button"
+            title="Download the last saved version as a JSON file"
+          >
+            export json
+          </button>
           {/* save button — always rendered, shows status in subflow */}
           <button
             className={`${saveButtonClass} ${isSubflow ? styles.toolbarButtonDimmed : ''}`}

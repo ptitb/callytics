@@ -557,6 +557,32 @@ export async function listTemplates(): Promise<ListResponse<TemplateItem>> {
   return response.data;
 }
 
+/** Portable flow document as returned by GET /flows/:id/export. */
+export interface FlowExportDocument {
+  format: 'callytics-flow';
+  version: number;
+  exportedAt: string;
+  name: string;
+  description?: string;
+  nodes: unknown[];
+  edges: unknown[];
+  subflows?: unknown[];
+}
+
+export interface ImportFlowDocumentResponse {
+  data: { id: number; name: string; warnings: string[] };
+}
+
+export async function exportFlowDocument(id: number | string): Promise<FlowExportDocument> {
+  const response = await api.get<FlowExportDocument>(`/flows/${id}/export`);
+  return response.data;
+}
+
+export async function importFlowDocument(document: unknown): Promise<ImportFlowDocumentResponse> {
+  const response = await api.post<ImportFlowDocumentResponse>('/templates/import', document);
+  return response.data;
+}
+
 export async function importTemplate(id: number): Promise<DetailResponse<{ id: number; name: string }>> {
   const response = await api.post<DetailResponse<{ id: number; name: string }>>(`/templates/${id}/import`);
   return response.data;
