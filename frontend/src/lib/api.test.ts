@@ -37,6 +37,21 @@ describe('api library', () => {
     expect(axios.get).toHaveBeenCalledWith('/flows/1');
   });
 
+  it('exportFlowDocument calls the export endpoint', async () => {
+    (axios.get as any).mockResolvedValue({ data: { format: 'callytics-flow' } });
+    const result = await api.exportFlowDocument(7);
+    expect(axios.get).toHaveBeenCalledWith('/flows/7/export');
+    expect(result.format).toBe('callytics-flow');
+  });
+
+  it('importFlowDocument posts the document to /templates/import', async () => {
+    const document = { name: 'My Flow', nodes: [], edges: [] };
+    (axios.post as any).mockResolvedValue({ data: { data: { id: 3, name: 'My Flow', warnings: [] } } });
+    const result = await api.importFlowDocument(document);
+    expect(axios.post).toHaveBeenCalledWith('/templates/import', document);
+    expect(result.data.id).toBe(3);
+  });
+
   it('getFlowBreadcrumb calls correct endpoint', async () => {
     (axios.get as any).mockResolvedValue({ data: [] });
     await api.getFlowBreadcrumb(1);

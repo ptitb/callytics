@@ -26,6 +26,7 @@ vi.mock('../lib/api', () => ({
   getFlowTree: vi.fn(() => Promise.resolve({ data: { id: 1, name: 'Test Flow', children: [] } })),
   createFlow: vi.fn(),
   updateFlow: vi.fn(),
+  exportFlowDocument: vi.fn(),
   listAudioVoices: vi.fn(() => Promise.resolve({ data: [], total: 0 })),
   listAudio: vi.fn(() => Promise.resolve({ data: [], total: 0 })),
   listQueues: vi.fn(() => Promise.resolve({ data: [] })),
@@ -179,6 +180,49 @@ function renderFlowEditor(initialEntry = '/flows/1') {
 
 afterEach(() => {
   vi.useRealTimers();
+});
+
+describe('FlowEditorPage export', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    window.localStorage.clear();
+    setWindowWidth(1440);
+    currentCanvasState = buildCanvasState();
+    flowCanvasMock.useFlowCanvas.mockImplementation(() => currentCanvasState);
+    Object.assign(URL, { createObjectURL: vi.fn(() => 'blob:flow'), revokeObjectURL: vi.fn() });
+  });
+
+  it('downloads the saved flow via the export json button', async () => {
+    vi.mocked(api.getFlow).mockResolvedValue({ data: buildFlowDetail({ slug: 'test-flow' }) });
+    vi.mocked(api.exportFlowDocument).mockResolvedValue({
+      format: 'callytics-flow', version: 1, exportedAt: '2026-01-01T00:00:00.000Z', name: 'Test Flow', nodes: [], edges: [],
+    });
+    let downloadName = '';
+    const clickSpy = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      downloadName = this.download;
+    });
+
+    renderFlowEditor();
+    const button = await screen.findByRole('button', { name: 'export json' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    await waitFor(() => expect(api.exportFlowDocument).toHaveBeenCalledWith(1));
+    await waitFor(() => expect(downloadName).toBe('test-flow.json'));
+    clickSpy.mockRestore();
+  });
+
+  it('shows an error notice when the export fails', async () => {
+    vi.mocked(api.getFlow).mockResolvedValue({ data: buildFlowDetail() });
+    vi.mocked(api.exportFlowDocument).mockRejectedValue(new Error('export exploded'));
+
+    renderFlowEditor();
+    const button = await screen.findByRole('button', { name: 'export json' });
+    await waitFor(() => expect(button).toBeEnabled());
+    fireEvent.click(button);
+
+    expect(await screen.findByText('export exploded')).toBeInTheDocument();
+  });
 });
 
 describe('FlowEditorPage config panel visibility', () => {
