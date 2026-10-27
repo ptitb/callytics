@@ -1,0 +1,15 @@
+# Copies the Caddy certificate for the SIP hostname to a directory the Callytics
+# container can read. See callytics-tls-sync.sh for details.
+[Unit]
+Description=Copy Caddy SIP certificate for Callytics
+After=caddy.service
+
+[Service]
+Type=oneshot
+Environment=SIP_TLS_HOSTNAME=sip.example.com
+# Directory where Caddy stores the certificate. Find it with:
+#   find / -name 'sip.example.com.crt' -path '*caddy*' 2>/dev/null
+Environment=CADDY_CERT_DIR=/root/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/sip.example.com
+Environment=TARGET_DIR=/etc/callytics/tls
+Environment=TARGET_OWNER=callytics
+ExecStart=/usr/local/sbin/callytics-tls-sync

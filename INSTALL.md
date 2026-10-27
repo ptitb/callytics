@@ -66,7 +66,7 @@ Controleer of `.env` deze waarden heeft (pas aan met een editor en start opnieuw
 | `RTP_PORT_START`, `RTP_PORT_END` | `10100`, `10120` | RTP-bereik voor de eerste start. FreePBX gebruikt 10000-20000, het bereik mag niet overlappen. Elk gesprek gebruikt twee poorten (RTP en RTCP), 21 poorten is dus ruim voor ongeveer 10 gelijktijdige gesprekken. Na de eerste start beheer je het bereik in Settings. |
 | `SIP_TLS_PORT` | `5081` | TLS-poort voor Groundwire. 5061 is gereserveerd voor FreePBX. |
 | `SIP_TLS_HOSTNAME` | `sip.example.com` | Naam waarmee de softphone verbindt. Bepaalt ook de bestandsnamen `sip.example.com.crt` en `sip.example.com.key` en de provisioning-URI. |
-| `SIP_TLS_CERT_DIR` | `/var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.org-directory/sip.example.com` | Map op de host met certificaat en sleutel. Wordt read-only in de asterisk-container gemount. Leeg betekent: TLS uit. De map moet bestaan, anders weigert Docker de container te starten. |
+| `SIP_TLS_CERT_DIR` | `/etc/callytics/tls` | Map op de host met certificaat en sleutel. Wordt read-only in de asterisk-container gemount. Leeg betekent: TLS uit. De map moet bestaan, anders weigert Docker de container te starten. Kan de container de opslag van Caddy niet lezen, gebruik dan de kopie uit stap 4. |
 | `SIP_TLS_CERT_FILE`, `SIP_TLS_KEY_FILE` | leeg | Alleen invullen als de bestandsnamen afwijken van `<hostname>.crt` en `<hostname>.key`. |
 | `SIP_TLS_WATCH_INTERVAL` | `3600` | Seconden tussen controles op een vernieuwd certificaat (zie stap 7). |
 | `WEB_BIND_ADDR` | `127.0.0.1` | Bind-adres van de web-UI (poort 3000). Laat op `127.0.0.1`, Caddy is de enige toegang. |
@@ -106,7 +106,23 @@ sudo ls /var/lib/caddy/.local/share/caddy/certificates/acme-v02.api.letsencrypt.
 
 Verwacht: `sip.example.com.crt`, `sip.example.com.key` en `sip.example.com.json`. Dit is het pad dat Caddy via apt gebruikt. Wijkt jouw pad af, zoek het dan met `sudo find /var/lib/caddy -name 'sip.example.com.crt'` en zet de map in `SIP_TLS_CERT_DIR`.
 
-Rechten: de sleutel is alleen leesbaar voor de gebruiker `caddy`. Dat is geen probleem, omdat de Docker-daemon de map als root mount en Asterisk in de container als root draait. Wijzig de rechten van Caddy niet.
+Draait Caddy als root, dan staat het certificaat in `/root/.local/share/caddy/certificates/...`. Zoek het pad met `sudo find / -name 'sip.example.com.crt' -path '*caddy*' 2>/dev/null`.
+
+Rechten: de sleutel is alleen leesbaar voor de gebruiker van Caddy (`caddy` of `root`). Draait Docker als root, dan kan `SIP_TLS_CERT_DIR` direct naar de map van Caddy wijzen. Draait Docker rootless of onder een andere gebruiker (bijvoorbeeld `callytics`), dan kan de container die map niet lezen. Wijzig de rechten van Caddy niet, maar laat een kopie maken:
+
+```bash
+cd deploy/examples
+sudo install -m 0755 callytics-tls-sync.sh /usr/local/sbin/callytics-tls-sync
+sudo install -m 0644 callytics-tls-sync.service callytics-tls-sync.timer /etc/systemd/system/
+sudo nano /etc/systemd/system/callytics-tls-sync.service   # hostname, Caddy-map en gebruiker aanpassen
+sudo systemctl daemon-reload
+sudo systemctl enable --now callytics-tls-sync.timer
+sudo systemctl start callytics-tls-sync.service
+sudo journalctl -u callytics-tls-sync.service -n 5
+sudo ls -l /etc/callytics/tls/
+```
+
+Het script draait als root, controleert of sleutel en certificaat bij elkaar horen en kopieert ze naar `/etc/callytics/tls` met eigenaar `callytics` (certificaat 0644, sleutel 0640, map 0750). Het vervangt de bestanden alleen als ze veranderd zijn. De timer draait elk uur. Zet daarna `SIP_TLS_CERT_DIR=/etc/callytics/tls` in `.env`.
 
 WebSocket-verkeer (`/socket.io` en het softphone-pad `/ws`) wordt door `reverse_proxy` in Caddy standaard doorgegeven. Er is geen extra instelling nodig.
 
@@ -164,6 +180,8 @@ Wat gemeten is (lokale Asterisk 20.21-container met een zelfgemaakt ECDSA-certif
 - Daarna `module reload res_pjsip.so`: `openssl s_client` toont het nieuwe serienummer. Het certificaat wordt dus zonder herstart overgenomen.
 - `pjsip reload` bestaat niet in Asterisk 20 ("No such command").
 - Een certificaat met een sleutel die er niet bij hoort, gevolgd door een reload, breekt elke TLS-handshake tot de bestanden weer kloppen.
+
+Gebruik je de kopie uit stap 4, dan zet de timer het vernieuwde certificaat binnen een uur in `/etc/callytics/tls`. Daarna pakt de controle-lus hieronder het op, dus het kan tot twee uur duren voordat Asterisk het nieuwe certificaat gebruikt.
 
 Daarom draait in de asterisk-container een controle-lus (in `docker/asterisk/entrypoint.sh`):
 
@@ -285,7 +303,7 @@ Bekende valkuilen:
 | UI geeft een TLS-fout | Caddy heeft het certificaat nog niet. Controleer `sudo journalctl -u caddy` en of 80/443 van buiten bereikbaar zijn en het A-record klopt. |
 | Poort 5061 is bezet | FreePBX gebruikt 5061 voor TLS. Gebruik voor Callytics `SIP_TLS_PORT=5081`. |
 | Poort 5038 of 5060 is bezet | FreePBX gebruikt deze. Gebruik `AMI_PORT=5039` en `SIP_PORT=5080`. |
-| `SIP TLS disabled` in de logs | Certificaat of sleutel niet gevonden of niet leesbaar. Controleer `SIP_TLS_CERT_DIR`, `SIP_TLS_HOSTNAME` en of `<hostname>.crt` en `<hostname>.key` in die map staan. Herstart daarna de asterisk-container. |
+| `SIP TLS disabled` in de logs | Certificaat of sleutel niet gevonden of niet leesbaar. Controleer `SIP_TLS_CERT_DIR`, `SIP_TLS_HOSTNAME` en of `<hostname>.crt` en `<hostname>.key` in die map staan. Draait Docker niet als root, gebruik dan de kopie uit stap 4. Herstart daarna de asterisk-container. |
 | `docker compose up` meldt `bind source path does not exist` | `SIP_TLS_CERT_DIR` wijst naar een map die niet bestaat. Laat Caddy eerst het certificaat uitgeven of maak de variabele leeg. |
 | TLS-optie ontbreekt bij extensies | SIP TLS is niet actief, zie hierboven. De backend leest dit uit het gegenereerde `pjsip_tls.conf`. |
 | TLS-handshake mislukt na een vernieuwing | Sleutel en certificaat horen niet bij elkaar. Controleer de bestanden en voer `docker compose exec asterisk asterisk -rx "module reload res_pjsip.so"` uit. |
