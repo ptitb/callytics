@@ -144,6 +144,7 @@ describe('SettingsService outbound dialing settings', () => {
       outbound_normalize_e164: 'true',
       outbound_country_code: '31',
       outbound_international_prefix: '00',
+      outbound_wait_audio: 'ringback',
     });
   });
 
@@ -153,12 +154,14 @@ describe('SettingsService outbound dialing settings', () => {
       { key: 'outbound_normalize_e164', value: 'true' },
       { key: 'outbound_country_code', value: '44' },
       { key: 'outbound_international_prefix', value: '011' },
+      { key: 'outbound_wait_audio', value: 'moh' },
     ]);
     await expect(service.getAll()).resolves.toEqual({
       outbound_dial_without_hash: false,
       outbound_normalize_e164: true,
       outbound_country_code: '44',
       outbound_international_prefix: '011',
+      outbound_wait_audio: 'moh',
     });
   });
 
@@ -168,6 +171,7 @@ describe('SettingsService outbound dialing settings', () => {
       outbound_normalize_e164: false,
       outbound_country_code: '44',
       outbound_international_prefix: '011',
+      outbound_wait_audio: 'moh',
     });
     const saved = settingsRepository.save.mock.calls.map(([row]: [{ key: string; value: string }]) => [row.key, row.value]);
     expect(saved).toEqual(expect.arrayContaining([
@@ -175,6 +179,7 @@ describe('SettingsService outbound dialing settings', () => {
       ['outbound_normalize_e164', 'false'],
       ['outbound_country_code', '44'],
       ['outbound_international_prefix', '011'],
+      ['outbound_wait_audio', 'moh'],
     ]));
   });
 
@@ -190,7 +195,31 @@ describe('SettingsService outbound dialing settings', () => {
     ['outbound_international_prefix', '00000'],
     ['outbound_international_prefix', '0a'],
     ['outbound_international_prefix', null],
+    ['outbound_wait_audio', 'beep'],
+    ['outbound_wait_audio', ''],
+    ['outbound_wait_audio', true],
+    ['outbound_wait_audio', null],
   ])('rejects %s = %p', async (key, value) => {
     await expect(service.updateMany({ [key]: value as never })).rejects.toThrow(BadRequestException);
+  });
+});
+
+describe('SettingsService outbound_wait_audio fallback', () => {
+  it('reads an unknown stored value as the default', async () => {
+    const repo = {
+      findOne: jest.fn(),
+      create: jest.fn((value: object) => value),
+      save: jest.fn(),
+      find: jest.fn().mockResolvedValue([{ key: 'outbound_wait_audio', value: 'beep' }]),
+    };
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SettingsService,
+        { provide: getDataSourceToken(), useValue: { query: jest.fn() } },
+        { provide: getRepositoryToken(SettingsEntity), useValue: repo },
+        { provide: getRepositoryToken(SipTrunkEntity), useValue: { findOne: jest.fn() } },
+      ],
+    }).compile();
+    await expect(module.get(SettingsService).getAll()).resolves.toEqual({ outbound_wait_audio: 'ringback' });
   });
 });

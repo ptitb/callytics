@@ -4,7 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { getEnvRtpRange, validateRtpRange } from '../asterisk/rtp-range';
 import { runSqlMigrations } from '../db/run-sql-migrations';
 import { SipTrunkEntity } from '../trunks/entities/sip-trunk.entity';
-import { OUTBOUND_DEFAULTS, validateOutboundCountryCode, validateOutboundInternationalPrefix } from './outbound-dialing';
+import { OUTBOUND_DEFAULTS, validateOutboundCountryCode, validateOutboundInternationalPrefix, validateOutboundWaitAudio } from './outbound-dialing';
 import { SettingsEntity } from './settings.entity';
 
 export type SettingValue = boolean | number | string | null;
@@ -226,6 +226,14 @@ export class SettingsService implements OnModuleInit {
       return this.serializeValue(value);
     }
 
+    if (key === 'outbound_wait_audio') {
+      const message = validateOutboundWaitAudio(value);
+      if (message) {
+        throw new BadRequestException(message);
+      }
+      return this.serializeValue(value);
+    }
+
     if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
       throw new BadRequestException(`unsupported value type for setting ${key}`);
     }
@@ -267,6 +275,10 @@ export class SettingsService implements OnModuleInit {
 
     if (key === 'outbound_international_prefix') {
       return validateOutboundInternationalPrefix(value) ? OUTBOUND_DEFAULTS[key] : value;
+    }
+
+    if (key === 'outbound_wait_audio') {
+      return validateOutboundWaitAudio(value) ? OUTBOUND_DEFAULTS[key] : value;
     }
 
     return value;
