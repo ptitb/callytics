@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDateTime, formatRelativeTime, formatUptime,formatPacketTimestamp } from './time';
+import { formatDateTime, formatNumericDateTime, formatRelativeTime, formatUptime,formatPacketTimestamp } from './time';
 
 const DISPLAY_TIMEZONE = import.meta.env.VITE_DISPLAY_TIMEZONE || 'UTC';
 
@@ -97,5 +97,25 @@ describe('formatPacketTimestamp', () => {
   it('handles end of day UTC without throwing', () => {
     const result = formatPacketTimestamp('23:59:59.999');
     expect(result).toBe(expectedPacketTime('23:59:59.999'));
+  });
+});
+
+describe('formatNumericDateTime', () => {
+  it('formats as dd-mm-yyyy HH:mm in the display timezone', () => {
+    const value = '2026-10-30T16:41:00.000Z';
+    const parts = new Intl.DateTimeFormat('en-GB', {
+      timeZone: DISPLAY_TIMEZONE,
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    }).formatToParts(new Date(value));
+    const map = new Map(parts.map((part) => [part.type, part.value]));
+    const expected = `${map.get('day')}-${map.get('month')}-${map.get('year')} ${map.get('hour')}:${map.get('minute')}`;
+
+    expect(formatNumericDateTime(value)).toBe(expected);
+    expect(formatNumericDateTime(value)).toMatch(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}$/);
   });
 });

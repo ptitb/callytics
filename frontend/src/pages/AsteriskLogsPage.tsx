@@ -7,7 +7,8 @@ import { Pagination } from '../components/common/Pagination';
 import { TruncatedText } from '../components/common/TruncatedText';
 import { listAsteriskLogs } from '../lib/api';
 import { getApiError } from '../lib/apiError';
-import { formatDateTime } from '../lib/time';
+import { useResizableColumns } from '../hooks/useResizableColumns';
+import { formatNumericDateTime } from '../lib/time';
 import type { AsteriskLogEntry, AsteriskLogLevel } from '../types';
 import styles from './AsteriskLogsPage.module.css';
 
@@ -36,6 +37,23 @@ function rowHighlightClass(level: AsteriskLogLevel): string {
   return '';
 }
 
+type ResizableColumn = 'timestamp' | 'level' | 'channel' | 'module';
+
+// The message column takes the remaining width.
+const DEFAULT_COLUMN_WIDTHS: Record<ResizableColumn, number> = {
+  timestamp: 172,
+  level: 96,
+  channel: 120,
+  module: 140,
+};
+
+const RESIZABLE_COLUMNS: Array<{ key: ResizableColumn; label: string }> = [
+  { key: 'timestamp', label: 'timestamp' },
+  { key: 'level', label: 'level' },
+  { key: 'channel', label: 'channel' },
+  { key: 'module', label: 'module' },
+];
+
 function normalizeChannel(value: string): string {
   return value.trim();
 }
@@ -49,6 +67,10 @@ export function AsteriskLogsPage() {
   const [offset, setOffset] = useState(0);
   const [refreshKey, setRefreshKey] = useState(0);
   const [expandedRowKey, setExpandedRowKey] = useState<string | null>(null);
+  const { widths: columnWidths, startResize, resetWidths } = useResizableColumns(
+    'callytics.asteriskLogs.columnWidths',
+    DEFAULT_COLUMN_WIDTHS,
+  );
 
   const [entries, setEntries] = useState<AsteriskLogEntry[]>([]);
   const [total, setTotal] = useState(0);
@@ -218,13 +240,29 @@ export function AsteriskLogsPage() {
 
         <div className={styles.tableCard}>
           <table className={styles.table}>
+            <colgroup>
+              {RESIZABLE_COLUMNS.map((column) => (
+                <col key={column.key} style={{ width: columnWidths[column.key] }} />
+              ))}
+              <col />
+            </colgroup>
             <thead>
               <tr>
-                <th className={styles.timestampCol}>timestamp</th>
-                <th className={styles.levelCol}>level</th>
-                <th className={styles.channelCol}>channel</th>
-                <th className={styles.moduleCol}>module</th>
-                <th className={styles.messageCol}>message</th>
+                {RESIZABLE_COLUMNS.map((column) => (
+                  <th key={column.key} className={styles.resizableHeader}>
+                    {column.label}
+                    <span
+                      className={styles.resizeHandle}
+                      role="separator"
+                      aria-orientation="vertical"
+                      aria-label={`Resize ${column.label} column`}
+                      title="Drag to resize, double-click to reset all columns"
+                      onPointerDown={(event) => startResize(column.key, event)}
+                      onDoubleClick={resetWidths}
+                    />
+                  </th>
+                ))}
+                <th>message</th>
               </tr>
             </thead>
             <tbody>
@@ -249,13 +287,13 @@ export function AsteriskLogsPage() {
                       className={`${styles.row} ${channelGroupClass} ${rowHighlightClass(entry.level)} ${isExpanded ? styles.rowExpanded : ''} table-row-hover`.trim()}
                       onClick={() => setExpandedRowKey((current) => (current === rowKey ? null : rowKey))}
                     >
-                      <td className={`${styles.timestamp} ${styles.timestampCol}`}>{formatDateTime(entry.timestamp)}</td>
-                      <td className={styles.levelCol}>
+                      <td className={styles.timestamp}>{formatNumericDateTime(entry.timestamp)}</td>
+                      <td>
                         <span className={`${styles.levelBadge} ${levelBadgeClass(entry.level)}`.trim()}>{entry.level}</span>
                       </td>
-                      <td className={styles.channelCol}><TruncatedText className={styles.channel} value={normalizedChannel || '—'} /></td>
-                      <td className={styles.moduleCol}><TruncatedText className={styles.module} value={entry.module || '—'} /></td>
-                      <td className={`${styles.messageCell} ${styles.messageCol}`}>
+                      <td><TruncatedText className={styles.channel} value={normalizedChannel || '—'} /></td>
+                      <td><TruncatedText className={styles.module} value={entry.module || '—'} /></td>
+                      <td className={styles.messageCell}>
                         <TruncatedText className={styles.rawMessage} value={entry.message} />
                         {entry.translation ? <TruncatedText className={styles.translation} value={entry.translation} /> : null}
                       </td>

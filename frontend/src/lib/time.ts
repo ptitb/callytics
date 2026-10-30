@@ -50,6 +50,23 @@ export function formatDateTime(value: string | Date): string {
   return `${map.get('day')} ${map.get('month')} ${map.get('year')}, ${map.get('hour')}:${map.get('minute')}`;
 }
 
+/**
+ * Formats a date-time value as "30-10-2026 16:41".
+ * Numeric day-month-year, 24h time, no seconds. Used where columns are narrow, such as log tables.
+ */
+export function formatNumericDateTime(value: string | Date): string {
+  const d = typeof value === 'string' ? new Date(value) : value;
+  const parts = buildFormatter({
+    day: '2-digit',
+    month: '2-digit',
+    year: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }).formatToParts(d);
+  const map = new Map(parts.map((part) => [part.type, part.value]));
+  return `${map.get('day')}-${map.get('month')}-${map.get('year')} ${map.get('hour')}:${map.get('minute')}`;
+}
 
 /**
  * Converts a tshark UTC packet timestamp "HH:MM:SS.mmm" to local time "HH:MM:SS".

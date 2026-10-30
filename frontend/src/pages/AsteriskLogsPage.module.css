@@ -36,34 +36,39 @@
 
 .table {
   width: 100%;
-  table-layout: auto;
+  /* Fixed layout so the widths from <colgroup> (user-resizable) are respected. */
+  table-layout: fixed;
   border-collapse: collapse;
 }
 
-.timestampCol {
-  width: 164px;
-  min-width: 164px;
-  max-width: 164px;
+.resizableHeader {
+  position: relative;
 }
 
-.levelCol {
-  width: 80px;
-  min-width: 80px;
-  max-width: 80px;
+.resizeHandle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  touch-action: none;
+  user-select: none;
 }
 
-.channelCol {
-  width: 120px;
-  min-width: 120px;
-  max-width: 120px;
+.resizeHandle::after {
+  content: '';
+  position: absolute;
+  top: 25%;
+  right: 3px;
+  width: 2px;
+  height: 50%;
+  background: var(--border-strong);
+  border-radius: 1px;
 }
 
-.moduleCol {
-  width: 140px;
-}
-
-.messageCol {
-  width: auto;
+.resizeHandle:hover::after {
+  background: var(--accent);
 }
 
 .row {
@@ -189,6 +194,8 @@
   font-size: 14px;
   font-weight: 600;
   white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .channel,
