@@ -40,6 +40,12 @@ import {
   parseOutboundNumberSettings,
   type OutboundNumberSettings,
 } from "./lib/outboundNumber";
+import {
+  parseOutboundWaitAudio,
+  startOutboundWaitAudio,
+  stopOutboundWaitAudio,
+  type OutboundWaitAudio,
+} from "./lib/outboundWaitAudio";
 import { waitForPlaybackFinished } from "./lib/playback";
 import { resolveStasisChannel } from "./lib/ariChannel";
 import { closeRedisConnections, getPublisher, getSubscriber } from "./redis";
@@ -196,6 +202,7 @@ interface DirectOutboundSettingsResponse {
   default_outbound_trunk_id: number | null;
   record_outbound_calls: boolean;
   numberSettings: OutboundNumberSettings;
+  waitAudio: OutboundWaitAudio;
 }
 
 interface DirectOutboundTrunkResponse {
@@ -224,6 +231,8 @@ interface DirectOutboundActiveCall {
   startedAt: Date;
   answeredAt: Date | null;
   recordOutboundCalls: boolean;
+  /** Audio the extension hears until the outbound leg answers. */
+  waitAudio: OutboundWaitAudio;
   recording: {
     name: string;
     fileName: string;
@@ -250,6 +259,9 @@ interface DirectOutboundAriClient {
     hangup: (params: { channelId: string; reason?: string }) => Promise<void>;
     startMoh?: (params: { channelId: string; mohClass?: string }) => Promise<void>;
     stopMoh?: (params: { channelId: string }) => Promise<void>;
+    ring?: (params: { channelId: string }) => Promise<void>;
+    ringStop?: (params: { channelId: string }) => Promise<void>;
+    answer?: (params: { channelId: string }) => Promise<void>;
   };
   bridges: {
     create: (params: { type: string; name?: string }) => Promise<{ id: string }>;
@@ -361,6 +373,7 @@ async function fetchDirectOutboundSettings(): Promise<DirectOutboundSettingsResp
       : null,
     record_outbound_calls: Boolean(settings.record_outbound_calls),
     numberSettings: parseOutboundNumberSettings(settings),
+    waitAudio: parseOutboundWaitAudio(settings),
   };
 }
 
@@ -388,26 +401,6 @@ function untrackDirectOutboundCall(call: DirectOutboundActiveCall): void {
   directOutboundCalls.delete(call.inboundChannelId);
   if (call.outboundChannelId) {
     directOutboundCalls.delete(call.outboundChannelId);
-  }
-}
-
-async function startDirectOutboundMoh(ariClientRaw: unknown, channelId: string): Promise<void> {
-  const ariClient = ariClientRaw as DirectOutboundAriClient;
-  if (!ariClient.channels.startMoh) {
-    return;
-  }
-  await ariClient.channels.startMoh({ channelId, mohClass: DIRECT_OUTBOUND_MOH_CLASS });
-}
-
-async function stopDirectOutboundMoh(ariClientRaw: unknown, channelId: string): Promise<void> {
-  const ariClient = ariClientRaw as DirectOutboundAriClient;
-  if (!ariClient.channels.stopMoh) {
-    return;
-  }
-  try {
-    await ariClient.channels.stopMoh({ channelId });
-  } catch {
-    // channel may already be gone
   }
 }
 
@@ -557,7 +550,7 @@ async function cleanupDirectOutboundCall(
   const endedAt = new Date();
   untrackDirectOutboundCall(call);
 
-  await stopDirectOutboundMoh(ariClient, call.inboundChannelId);
+  await stopOutboundWaitAudio(ariClient.channels, call.inboundChannelId, call.waitAudio);
 
   if (call.recording && !call.recording.endedAt) {
     call.recording.endedAt = endedAt;
@@ -612,11 +605,6 @@ async function handleDirectOutboundDial(
   const calledExten = String(event.channel?.dialplan?.exten || "").trim();
   const callerNumber = String(event.channel?.caller?.number || "unknown").trim() || "unknown";
   const dialedNumber = extractDialedNumber(calledExten);
-  try {
-    await startDirectOutboundMoh(ariClientRaw, channel.id);
-  } catch (error) {
-    stasisLogger.error("[direct-outbound] hold audio start failed:", error);
-  }
 
   if (dialedNumber === null) {
     await channel.hangup().catch(() => undefined);
@@ -657,10 +645,24 @@ async function handleDirectOutboundDial(
     startedAt: new Date(),
     answeredAt: null,
     recordOutboundCalls: settings.record_outbound_calls,
+    waitAudio: settings.waitAudio,
     recording: null,
     cleanupStarted: false,
   };
   trackDirectOutboundCallChannel(call, call.inboundChannelId);
+
+  // The extension's channel is not answered yet (nothing in this path answers it before the
+  // outbound leg does), so ringing makes Asterisk send 180 Ringing to the phone.
+  try {
+    await startOutboundWaitAudio(
+      (ariClientRaw as DirectOutboundAriClient).channels,
+      call.inboundChannelId,
+      call.waitAudio,
+      DIRECT_OUTBOUND_MOH_CLASS,
+    );
+  } catch (error) {
+    stasisLogger.error(`[direct-outbound] ${call.waitAudio} start failed:`, error);
+  }
 
   await publishDirectOutboundStarted(call).catch((error) => {
     stasisLogger.error("[direct-outbound] publish started failed:", error);
@@ -721,7 +723,14 @@ async function handleDirectOutboundDial(
   call.outboundChannelId = waitResult.channel.id;
   trackDirectOutboundCallChannel(call, call.outboundChannelId);
 
-  await stopDirectOutboundMoh(ariClientRaw, call.inboundChannelId);
+  const ariChannels = (ariClientRaw as DirectOutboundAriClient).channels;
+  await stopOutboundWaitAudio(ariChannels, call.inboundChannelId, call.waitAudio);
+  if (call.waitAudio === "ringback") {
+    // Ringing leaves the channel unanswered, so answer it now that the other side picked up.
+    await ariChannels.answer?.({ channelId: call.inboundChannelId }).catch((error: unknown) => {
+      stasisLogger.warn(`[direct-outbound] answer failed: ${error instanceof Error ? error.message : error}`);
+    });
+  }
 
   try {
     const bridge = await createDirectOutboundBridge(
