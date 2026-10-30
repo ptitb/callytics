@@ -38,18 +38,21 @@ Callytics supports direct outbound dialing from any registered softphone without
 
 3. Register your softphone to the Callytics server at `<host-ip>:5080` using an extension credential.
 
-4. From your softphone, dial `#` followed by the number in international format — for example:
+4. From your softphone, dial the external number, for example:
 
    ```
-   #94771234567
+   0612345678
+   +94771234567
    ```
 
-   - Use international format without a leading zero — dial `#94771234567`, not `#0771234567`
-   - The `#` prefix tells Callytics this is a direct outbound dial, not an inbound flow DID
+   - Callytics converts the number to E.164 (`0612345678` becomes `+31612345678`, `0044...` becomes `+44...`, `+44...` stays as it is, short numbers like `112` stay as they are)
+   - Extension numbers and inbound DIDs are never sent to the trunk
+   - Dialing `#` followed by the number (for example `#94771234567`) always dials out as well
+   - Settings > Outbound dialing controls this: turn off "Dial external numbers without #" to require the `#` prefix, turn off "Convert dialed numbers to E.164" to send the number as dialed, and set the country code (default `31`) and international prefix (default `00`)
 
 5. You will hear music on hold immediately while Callytics connects the call through your trunk.
 
 6. Go to Call Logs in the dashboard — the call will appear with direction set to `outbound`.
 
-> This works over the relay too — your softphone connects to the VPS, dials `#NUMBER`, and the outbound call goes out through your trunk on the Callytics host. No direct internet path needed from your phone.
+> This works over the relay too: your softphone connects to the VPS, dials the number, and the outbound call goes out through your trunk on the Callytics host. No direct internet path needed from your phone.
 

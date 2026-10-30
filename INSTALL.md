@@ -223,7 +223,22 @@ Ga naar Configure > Inbound en maak een route met het nummer (DID) in E.164-nota
 
 **Standaard uitgaande trunk**
 
-Kies op de Trunks-pagina onder "direct outbound dial" de standaard uitgaande trunk en sla op. Zonder deze keuze werkt de `#`-prefix niet.
+Kies op de Trunks-pagina onder "direct outbound dial" de standaard uitgaande trunk en sla op. Zonder deze keuze kun je niet uitbellen vanaf een extensie, met of zonder `#`.
+
+**Uitgaand bellen en nummerconversie**
+
+Extensies bellen externe nummers rechtstreeks, zonder `#`. Het nummer gaat via de standaard uitgaande trunk. Interne nummers (extensies) en inkomende nummers (DID's) hebben voorrang, `#<nummer>` blijft werken. Trunks kunnen nooit uitbellen: alleen extensies hebben toegang tot uitgaand verkeer.
+
+Instellingen onder Settings > Outbound dialing:
+
+| Instelling | Standaard | Werking |
+|---|---|---|
+| Dial external numbers without # | aan | Uit: alleen `#<nummer>` belt uit, andere nummers gaan naar de standaardflow. Opslaan herlaadt het dialplan in Asterisk zonder herstart |
+| Convert dialed numbers to E.164 | aan | Uit: het nummer gaat ongewijzigd naar de trunk (alleen de `#` wordt verwijderd) |
+| Country code | `31` | Landcode die een nummer met een voorloopnul krijgt |
+| International prefix | `00` | Voorvoegsel dat een internationaal nummer aanduidt |
+
+Conversie met de standaardwaarden: spaties, streepjes, punten en haakjes worden verwijderd, `0612345678` wordt `+31612345678`, `0044...` wordt `+44...`, `+44...` blijft gelijk en korte nummers zoals `112` blijven gelijk. Stasis leest deze waarden bij elk gesprek, een wijziging werkt dus direct. De trunk-instelling "dial format" wordt daarna op de cijfers van het genormaliseerde nummer toegepast. Nummers korter dan 9 cijfers worden daarbij geweigerd.
 
 **RTP-bereik**
 
@@ -255,6 +270,8 @@ Maak in Groundwire een SIP-account met deze waarden:
 | Transport | TLS |
 | SRTP | Verplicht (mandatory) |
 
+Externe nummers bel je in Groundwire rechtstreeks, bijvoorbeeld `0612345678` of `+442071234567`, zonder `#`. Callytics zet het nummer om naar E.164 (zie "Uitgaand bellen en nummerconversie" in stap 8). Staat "Dial external numbers without #" uit, dan bel je `#0612345678`.
+
 Push-notificaties: Acrobits SIPIS registreert namens de app vanaf de eigen servers van Acrobits. Dat zijn wisselende adressen, daarom staat poort 5081 open voor iedereen en is een IP-allowlist op deze poort geen optie.
 
 ## 10. Testplan
@@ -275,6 +292,9 @@ Voer de tests uit na de installatie en na elke grotere wijziging. Alle `asterisk
 | 10 | Poorten van buiten dicht | Vanaf een extern netwerk: `nc -zv <publiek-ip> 3000`, idem 3001 en 8088 | Alle drie geweigerd of time-out |
 | 11 | Inkomend gesprek | Bel het DID vanaf een mobiele telefoon | Flow start, audio in beide richtingen. In `docker compose logs stasis` staan de node-events |
 | 12 | Uitgaand met `#` | Bel vanuit een extensie `#<nummer>` | Gesprek gaat via de standaard uitgaande trunk. Bij een fout staat de reden in de stasis-logs (`DIRECT_OUTBOUND_TIMEOUT_MS` geldt als wachttijd) |
+| 12a | Uitgaand zonder `#` | Bel vanuit een extensie een extern nummer zonder `#`, bijvoorbeeld `06...` | Gesprek gaat via de standaard uitgaande trunk. De stasis-logs tonen `normalized dialed number 06... to +316...` |
+| 12b | Nummerconversie | Bel `0031...` en `+31...` vanuit een extensie | Beide gaan als `+31...` naar de trunk. Zet "Convert dialed numbers to E.164" uit en bel opnieuw: het nummer gaat ongewijzigd |
+| 12c | Trunk kan niet uitbellen | `dialplan show callytics-inbound` | Alleen extensies en DID's, geen `_#.` en geen `Goto`. `dialplan show callytics-extensions` toont ook `_#.` en `_X.` |
 | 13 | Ophangen tijdens playback | Bel een flow met een lange audio-node en hang op tijdens het afspelen | Flow stopt. Logregel `FlowStoppedCallerGone` in `docker compose logs stasis` |
 | 14 | Twee gelijktijdige gesprekken | Start twee gesprekken tegelijk (bijvoorbeeld twee keer het DID) | Beide hebben audio. `core show channels` toont beide. Met 21 RTP-poorten is dit ruim binnen het bereik |
 | 15 | Groundwire registreren | Account aanmaken volgens stap 9 | Status geregistreerd. `pjsip show contacts` toont het contact met `transport=tls` |
