@@ -237,6 +237,7 @@ Instellingen onder Settings > Outbound dialing:
 | Convert dialed numbers to E.164 | aan | Uit: het nummer gaat ongewijzigd naar de trunk (alleen de `#` wordt verwijderd) |
 | Country code | `31` | Landcode die een nummer met een voorloopnul krijgt |
 | International prefix | `00` | Voorvoegsel dat een internationaal nummer aanduidt |
+| Waiting audio while dialing out | Ringback tone | Wat de beller hoort tot de andere kant opneemt. Ringback tone: Asterisk stuurt 180 Ringing en de telefoon speelt zijn eigen beltoon. Hold music: Asterisk speelt wachtmuziek (klasse `DIRECT_OUTBOUND_MOH_CLASS`). Stasis leest de keuze bij elk gesprek |
 
 Conversie met de standaardwaarden: spaties, streepjes, punten en haakjes worden verwijderd, `0612345678` wordt `+31612345678`, `0044...` wordt `+44...`, `+44...` blijft gelijk en korte nummers zoals `112` blijven gelijk. Stasis leest deze waarden bij elk gesprek, een wijziging werkt dus direct. De trunk-instelling "dial format" wordt daarna op de cijfers van het genormaliseerde nummer toegepast. Nummers korter dan 9 cijfers worden daarbij geweigerd.
 
@@ -295,6 +296,7 @@ Voer de tests uit na de installatie en na elke grotere wijziging. Alle `asterisk
 | 12a | Uitgaand zonder `#` | Bel vanuit een extensie een extern nummer zonder `#`, bijvoorbeeld `06...` | Gesprek gaat via de standaard uitgaande trunk. De stasis-logs tonen `normalized dialed number 06... to +316...` |
 | 12b | Nummerconversie | Bel `0031...` en `+31...` vanuit een extensie | Beide gaan als `+31...` naar de trunk. Zet "Convert dialed numbers to E.164" uit en bel opnieuw: het nummer gaat ongewijzigd |
 | 12c | Trunk kan niet uitbellen | `dialplan show callytics-inbound` | Alleen extensies en DID's, geen `_#.` en geen `Goto`. `dialplan show callytics-extensions` toont ook `_#.` en `_X.` |
+| 12d | Wachtgeluid | Bel een extern nummer met "Ringback tone" en daarna met "Hold music" | Eerst hoor je de beltoon van de telefoon, daarna wachtmuziek. Na opnemen is het gesprek in beide gevallen hoorbaar |
 | 13 | Ophangen tijdens playback | Bel een flow met een lange audio-node en hang op tijdens het afspelen | Flow stopt. Logregel `FlowStoppedCallerGone` in `docker compose logs stasis` |
 | 14 | Twee gelijktijdige gesprekken | Start twee gesprekken tegelijk (bijvoorbeeld twee keer het DID) | Beide hebben audio. `core show channels` toont beide. Met 21 RTP-poorten is dit ruim binnen het bereik |
 | 15 | Groundwire registreren | Account aanmaken volgens stap 9 | Status geregistreerd. `pjsip show contacts` toont het contact met `transport=tls` |
