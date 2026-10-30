@@ -33,29 +33,15 @@ function buildFormatter(options: Intl.DateTimeFormatOptions): Intl.DateTimeForma
 }
 
 /**
- * Formats a date-time value as "13 Apr 2026, 09:57"
- * Day-month-year, 24h time, no seconds.
+ * Formats a date-time value as "30-10-2026 16:41".
+ * Numeric day-month-year, 24h time, no seconds.
+ * A value that is not a valid date is returned unchanged.
  */
 export function formatDateTime(value: string | Date): string {
-  const d = typeof value === 'string' ? new Date(value) : value;
-  const parts = buildFormatter({
-    day: '2-digit',
-    month: 'short',
-    year: 'numeric',
-    hour: '2-digit',
-    minute: '2-digit',
-    hour12: false,
-  }).formatToParts(d);
-  const map = new Map(parts.map((part) => [part.type, part.value]));
-  return `${map.get('day')} ${map.get('month')} ${map.get('year')}, ${map.get('hour')}:${map.get('minute')}`;
-}
-
-/**
- * Formats a date-time value as "30-10-2026 16:41".
- * Numeric day-month-year, 24h time, no seconds. Used where columns are narrow, such as log tables.
- */
-export function formatNumericDateTime(value: string | Date): string {
-  const d = typeof value === 'string' ? new Date(value) : value;
+  const d = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(d.getTime())) {
+    return typeof value === 'string' ? value : '';
+  }
   const parts = buildFormatter({
     day: '2-digit',
     month: '2-digit',

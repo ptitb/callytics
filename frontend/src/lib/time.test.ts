@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { formatDateTime, formatNumericDateTime, formatRelativeTime, formatUptime,formatPacketTimestamp } from './time';
+import { formatDateTime, formatRelativeTime, formatUptime,formatPacketTimestamp } from './time';
 
 const DISPLAY_TIMEZONE = import.meta.env.VITE_DISPLAY_TIMEZONE || 'UTC';
 
@@ -7,14 +7,14 @@ function expectedDateTime(value: string): string {
   const parts = new Intl.DateTimeFormat('en-GB', {
     timeZone: DISPLAY_TIMEZONE,
     day: '2-digit',
-    month: 'short',
+    month: '2-digit',
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
   }).formatToParts(new Date(value));
   const map = new Map(parts.map((part) => [part.type, part.value]));
-  return `${map.get('day')} ${map.get('month')} ${map.get('year')}, ${map.get('hour')}:${map.get('minute')}`;
+  return `${map.get('day')}-${map.get('month')}-${map.get('year')} ${map.get('hour')}:${map.get('minute')}`;
 }
 
 function expectedPacketTime(value: string): string {
@@ -100,22 +100,12 @@ describe('formatPacketTimestamp', () => {
   });
 });
 
-describe('formatNumericDateTime', () => {
-  it('formats as dd-mm-yyyy HH:mm in the display timezone', () => {
-    const value = '2026-10-30T16:41:00.000Z';
-    const parts = new Intl.DateTimeFormat('en-GB', {
-      timeZone: DISPLAY_TIMEZONE,
-      day: '2-digit',
-      month: '2-digit',
-      year: 'numeric',
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: false,
-    }).formatToParts(new Date(value));
-    const map = new Map(parts.map((part) => [part.type, part.value]));
-    const expected = `${map.get('day')}-${map.get('month')}-${map.get('year')} ${map.get('hour')}:${map.get('minute')}`;
+describe('formatDateTime numeric format', () => {
+  it('formats as dd-mm-yyyy HH:mm', () => {
+    expect(formatDateTime('2026-10-30T16:41:00.000Z')).toMatch(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}$/);
+  });
 
-    expect(formatNumericDateTime(value)).toBe(expected);
-    expect(formatNumericDateTime(value)).toMatch(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}$/);
+  it('returns an invalid date string unchanged instead of throwing', () => {
+    expect(formatDateTime('not a date')).toBe('not a date');
   });
 });

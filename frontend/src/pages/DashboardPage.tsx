@@ -9,6 +9,7 @@ import {
   listCallLogs,
 } from '../lib/api';
 import { diagnosticsSocket } from '../lib/socket';
+import { formatDateTime } from '../lib/time';
 import type {
   DiagnosticsSystemHealth,
   RegistrationHealthResponse,
@@ -1005,11 +1006,7 @@ export function DashboardPage() {
                                   <div className={styles.failureTraceField}>
                                     <span className={styles.failureTraceLabel}>TIME</span>
                                     <span className={styles.failureTraceValue}>
-                                      {failure.time && failure.time.includes(':')
-                                        ? `2026-05-24 ${failure.time}`
-                                        : (failure.time
-                                        ? new Date(failure.time).toLocaleString('en-GB', { hour12: false })
-                                        : '—')}
+                                      {failure.time ? formatDateTime(failure.time) : '—'}
                                     </span>
                                   </div>
                                   <div className={styles.failureTraceField}>

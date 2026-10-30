@@ -8,7 +8,7 @@ import { TruncatedText } from '../components/common/TruncatedText';
 import { listAsteriskLogs } from '../lib/api';
 import { getApiError } from '../lib/apiError';
 import { useResizableColumns } from '../hooks/useResizableColumns';
-import { formatNumericDateTime } from '../lib/time';
+import { formatDateTime } from '../lib/time';
 import type { AsteriskLogEntry, AsteriskLogLevel } from '../types';
 import styles from './AsteriskLogsPage.module.css';
 
@@ -287,7 +287,7 @@ export function AsteriskLogsPage() {
                       className={`${styles.row} ${channelGroupClass} ${rowHighlightClass(entry.level)} ${isExpanded ? styles.rowExpanded : ''} table-row-hover`.trim()}
                       onClick={() => setExpandedRowKey((current) => (current === rowKey ? null : rowKey))}
                     >
-                      <td className={styles.timestamp}>{formatNumericDateTime(entry.timestamp)}</td>
+                      <td className={styles.timestamp}>{formatDateTime(entry.timestamp)}</td>
                       <td>
                         <span className={`${styles.levelBadge} ${levelBadgeClass(entry.level)}`.trim()}>{entry.level}</span>
                       </td>
