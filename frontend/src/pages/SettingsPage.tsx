@@ -6,7 +6,11 @@ import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
 import { useWindowWidth } from '../hooks/useWindowWidth';
 import { getSettings, updateSettings } from '../lib/api';
 import { getApiError } from '../lib/apiError';
-import { validateRtpRange } from '../lib/validation';
+import {
+  validateOutboundCountryCode,
+  validateOutboundInternationalPrefix,
+  validateRtpRange,
+} from '../lib/validation';
 import { useToast } from '../context/ToastContext';
 import styles from './SettingsPage.module.css';
 
@@ -21,6 +25,12 @@ export function SettingsPage() {
   const [rtpEnd, setRtpEnd] = useState('20000');
   const [rtpSaveState, setRtpSaveState] = useState<SaveState>('idle');
   const [rtpError, setRtpError] = useState<string | null>(null);
+  const [dialWithoutHash, setDialWithoutHash] = useState(true);
+  const [normalizeE164, setNormalizeE164] = useState(true);
+  const [countryCode, setCountryCode] = useState('31');
+  const [internationalPrefix, setInternationalPrefix] = useState('00');
+  const [outboundSaveState, setOutboundSaveState] = useState<SaveState>('idle');
+  const [outboundError, setOutboundError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -33,6 +43,10 @@ export function SettingsPage() {
         setRetentionDays(String(settings.recording_retention_days ?? 0));
         setRtpStart(String(settings.rtp_port_start ?? 10000));
         setRtpEnd(String(settings.rtp_port_end ?? 20000));
+        setDialWithoutHash(settings.outbound_dial_without_hash ?? true);
+        setNormalizeE164(settings.outbound_normalize_e164 ?? true);
+        setCountryCode(String(settings.outbound_country_code ?? '31'));
+        setInternationalPrefix(String(settings.outbound_international_prefix ?? '00'));
       } catch (error) {
         setLoadError(getApiError(error, 'failed to load settings'));
       } finally {
@@ -94,6 +108,35 @@ export function SettingsPage() {
     } catch (error) {
       setRtpSaveState('failed');
       setRtpError(getApiError(error, 'failed to save RTP range'));
+    }
+  };
+
+  const handleSaveOutbound = async () => {
+    setOutboundError(null);
+    const message = validateOutboundCountryCode(countryCode) ?? validateOutboundInternationalPrefix(internationalPrefix);
+    if (message) {
+      setOutboundSaveState('failed');
+      setOutboundError(message);
+      return;
+    }
+
+    setOutboundSaveState('saving');
+    try {
+      const settings = await updateSettings({
+        outbound_dial_without_hash: dialWithoutHash,
+        outbound_normalize_e164: normalizeE164,
+        outbound_country_code: countryCode,
+        outbound_international_prefix: internationalPrefix,
+      });
+      setDialWithoutHash(settings.outbound_dial_without_hash ?? dialWithoutHash);
+      setNormalizeE164(settings.outbound_normalize_e164 ?? normalizeE164);
+      setCountryCode(String(settings.outbound_country_code ?? countryCode));
+      setInternationalPrefix(String(settings.outbound_international_prefix ?? internationalPrefix));
+      setOutboundSaveState('saved');
+      window.setTimeout(() => setOutboundSaveState('idle'), 2000);
+    } catch (error) {
+      setOutboundSaveState('failed');
+      setOutboundError(getApiError(error, 'failed to save outbound dialing settings'));
     }
   };
 
@@ -195,6 +238,74 @@ export function SettingsPage() {
               type="button"
             >
               {rtpSaveState === 'saving' ? 'saving…' : rtpSaveState === 'saved' ? 'saved ✓' : rtpSaveState === 'failed' ? 'failed' : 'save'}
+            </button>
+          </div>
+        </section>
+
+        <section className={styles.card}>
+          <div className={styles.cardHeader}>
+            <h2 className={styles.cardTitle}>Outbound dialing</h2>
+          </div>
+          <div className={styles.formField}>
+            <label className={styles.checkboxRow} htmlFor="outbound-dial-without-hash">
+              <input
+                checked={dialWithoutHash}
+                id="outbound-dial-without-hash"
+                onChange={(event) => setDialWithoutHash(event.target.checked)}
+                type="checkbox"
+              />
+              Dial external numbers without #
+            </label>
+            <p className={styles.note}>
+              Extensions can dial external numbers directly. Extension numbers and inbound DIDs keep working, and #number always dials out.
+              Saving reloads the dialplan in Asterisk without a restart.
+            </p>
+            <label className={styles.checkboxRow} htmlFor="outbound-normalize-e164">
+              <input
+                checked={normalizeE164}
+                id="outbound-normalize-e164"
+                onChange={(event) => setNormalizeE164(event.target.checked)}
+                type="checkbox"
+              />
+              Convert dialed numbers to E.164
+            </label>
+            <label className={styles.label} htmlFor="outbound-country-code">Country code</label>
+            <input
+              className={styles.input}
+              disabled={!normalizeE164}
+              id="outbound-country-code"
+              inputMode="numeric"
+              maxLength={3}
+              onChange={(event) => setCountryCode(event.target.value)}
+              type="text"
+              value={countryCode}
+            />
+            <label className={styles.label} htmlFor="outbound-international-prefix">International prefix</label>
+            <input
+              className={styles.input}
+              disabled={!normalizeE164}
+              id="outbound-international-prefix"
+              inputMode="numeric"
+              maxLength={4}
+              onChange={(event) => setInternationalPrefix(event.target.value)}
+              type="text"
+              value={internationalPrefix}
+            />
+            <p className={styles.note}>
+              Spaces, dashes, dots and parentheses are removed. A number starting with 0 gets the country code, a number starting with the
+              international prefix gets a +. With the defaults: 0612345678 becomes +31612345678, 0044... becomes +44..., +44... stays
+              unchanged and short numbers like 112 stay unchanged. With conversion off, the number is sent as dialed.
+            </p>
+            {outboundError ? <p className={styles.note} role="alert">{outboundError}</p> : null}
+          </div>
+          <div className={styles.actionRow}>
+            <button
+              className={`${styles.primaryButton} ${outboundSaveState === 'failed' ? styles.failedButton : ''} btn-press`}
+              disabled={outboundSaveState === 'saving'}
+              onClick={() => void handleSaveOutbound()}
+              type="button"
+            >
+              {outboundSaveState === 'saving' ? 'saving…' : outboundSaveState === 'saved' ? 'saved ✓' : outboundSaveState === 'failed' ? 'failed' : 'save'}
             </button>
           </div>
         </section>

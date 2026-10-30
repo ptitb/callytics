@@ -638,6 +638,10 @@ export interface SystemSettings {
   recording_retention_days: number;
   rtp_port_start: number;
   rtp_port_end: number;
+  outbound_dial_without_hash: boolean;
+  outbound_normalize_e164: boolean;
+  outbound_country_code: string;
+  outbound_international_prefix: string;
 }
 
 export type SettingsPatch = Partial<SystemSettings> & Record<string, SettingValue | undefined>;

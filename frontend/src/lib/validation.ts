@@ -55,3 +55,19 @@ export function validateRtpRange(start: number, end: number): string | null {
   }
   return null;
 }
+
+/** Mirrors the backend rule for the outbound country code. Returns an error message or null. */
+export function validateOutboundCountryCode(value: string): string | null {
+  if (!/^[1-9]\d{0,2}$/.test(value)) {
+    return 'Country code must be 1 to 3 digits and must not start with 0';
+  }
+  return null;
+}
+
+/** Mirrors the backend rule for the international prefix. Returns an error message or null. */
+export function validateOutboundInternationalPrefix(value: string): string | null {
+  if (!/^\d{1,4}$/.test(value)) {
+    return 'International prefix must be 1 to 4 digits';
+  }
+  return null;
+}

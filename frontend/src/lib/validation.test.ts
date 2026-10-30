@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findInvalidIpMatches, validateRtpRange, isValidIpMatch, normalizePhoneNumber, parseIpMatchInput } from './validation';
+import { findInvalidIpMatches, validateOutboundCountryCode, validateOutboundInternationalPrefix, validateRtpRange, isValidIpMatch, normalizePhoneNumber, parseIpMatchInput } from './validation';
 
 describe('normalizePhoneNumber', () => {
   it('removes spaces and separators', () => {
@@ -53,5 +53,32 @@ describe('validateRtpRange', () => {
 
   it('rejects ports out of bounds', () => {
     expect(validateRtpRange(100, 5000)).toMatch(/between/);
+  });
+});
+
+describe('validateOutboundCountryCode', () => {
+  it('accepts 1 to 3 digits', () => {
+    expect(validateOutboundCountryCode('1')).toBeNull();
+    expect(validateOutboundCountryCode('31')).toBeNull();
+    expect(validateOutboundCountryCode('351')).toBeNull();
+  });
+
+  it('rejects empty, too long, non-digit and leading zero values', () => {
+    for (const value of ['', '3100', '+31', '3a', '031']) {
+      expect(validateOutboundCountryCode(value)).toMatch(/Country code/);
+    }
+  });
+});
+
+describe('validateOutboundInternationalPrefix', () => {
+  it('accepts 1 to 4 digits', () => {
+    expect(validateOutboundInternationalPrefix('00')).toBeNull();
+    expect(validateOutboundInternationalPrefix('011')).toBeNull();
+  });
+
+  it('rejects empty, too long and non-digit values', () => {
+    for (const value of ['', '00000', '0a', '+']) {
+      expect(validateOutboundInternationalPrefix(value)).toMatch(/International prefix/);
+    }
   });
 });

@@ -173,6 +173,10 @@ const emptySettings: SystemSettings = {
   recording_retention_days: 0,
   rtp_port_start: 10000,
   rtp_port_end: 20000,
+  outbound_dial_without_hash: true,
+  outbound_normalize_e164: true,
+  outbound_country_code: '31',
+  outbound_international_prefix: '00',
 };
 
 function toForm(item: SipTrunkItem | null): TrunkFormState {

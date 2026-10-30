@@ -68,6 +68,15 @@
   -moz-appearance: textfield;
 }
 
+.checkboxRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 14px;
+}
+
 .note,
 .bodyText {
   margin: 0;
