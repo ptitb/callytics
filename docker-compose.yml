@@ -86,11 +86,11 @@ services:
       TZ: ${TZ:-UTC}
       ARI_URL: http://127.0.0.1:8088
       ARI_USER: ${ARI_USER:-callytics}
-      ARI_PASSWORD: ${ARI_PASS:?ARI_PASS is not set in .env}
+      ARI_PASS: ${ARI_PASS:?ARI_PASS is not set in .env}
       AMI_HOST: 127.0.0.1
       AMI_PORT: ${AMI_PORT:-5038}
       AMI_USER: ${AMI_USER:-callytics}
-      AMI_PASSWORD: ${AMI_PASS:?AMI_PASS is not set in .env}
+      AMI_PASS: ${AMI_PASS:?AMI_PASS is not set in .env}
       RTP_PORT_START: ${RTP_PORT_START:-10000}
       RTP_PORT_END: ${RTP_PORT_END:-20000}
       HOST_IP: ${HOST_IP:-127.0.0.1}

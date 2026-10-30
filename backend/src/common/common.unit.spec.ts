@@ -1,3 +1,4 @@
+import { getAriCredentials } from './asterisk-credentials';
 import { isValidIpMatch, normalizeIpMatchList } from './ip-match';
 import { normalizePhoneNumber, normalizeSipUser } from './phone-number';
 import { getUploadMaxBytes } from './upload-limit';
@@ -72,5 +73,24 @@ describe('getUploadMaxBytes', () => {
   it('ignores invalid values', () => {
     expect(getUploadMaxBytes({ UPLOAD_MAX_MB: 'abc' } as NodeJS.ProcessEnv)).toBe(100 * 1024 * 1024);
     expect(getUploadMaxBytes({ UPLOAD_MAX_MB: '-5' } as NodeJS.ProcessEnv)).toBe(100 * 1024 * 1024);
+  });
+});
+
+describe('getAriCredentials', () => {
+  it('reads ARI_PASS, the name docker compose passes', () => {
+    expect(getAriCredentials({ ARI_USER: 'ari', ARI_PASS: 'secret' })).toEqual({ user: 'ari', password: 'secret' });
+  });
+
+  it('still accepts the older ARI_PASSWORD name', () => {
+    expect(getAriCredentials({ ARI_PASSWORD: 'legacy' }).password).toBe('legacy');
+  });
+
+  it('prefers ARI_PASS when both are set and ignores empty values', () => {
+    expect(getAriCredentials({ ARI_PASS: 'new', ARI_PASSWORD: 'old' }).password).toBe('new');
+    expect(getAriCredentials({ ARI_PASS: '', ARI_PASSWORD: 'old' }).password).toBe('old');
+  });
+
+  it('falls back to the defaults', () => {
+    expect(getAriCredentials({})).toEqual({ user: 'callytics', password: 'callytics' });
   });
 });
