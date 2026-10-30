@@ -34,6 +34,12 @@ import { resolveHuntWaiter, rejectHuntWaiter, hasHuntWaiter } from "./huntManage
 import { resolveCallbackWaiter, hasCallbackWaiter } from "./callbackManager";
 import { resolveAudioMediaPath } from "./audioResolver";
 import { formatDialNumber } from "./lib/formatDialNumber";
+import {
+  extractDialedNumber,
+  normalizeOutboundNumber,
+  parseOutboundNumberSettings,
+  type OutboundNumberSettings,
+} from "./lib/outboundNumber";
 import { waitForPlaybackFinished } from "./lib/playback";
 import { resolveStasisChannel } from "./lib/ariChannel";
 import { closeRedisConnections, getPublisher, getSubscriber } from "./redis";
@@ -51,6 +57,9 @@ const ARI_URL = process.env.ARI_URL || "http://127.0.0.1:8088";
 const ARI_USER = process.env.ARI_USER || "callytics";
 const ARI_PASS = process.env.ARI_PASS || "callytics";
 const ARI_APP = process.env.ARI_APP || "callytics";
+// Trunks use callytics-inbound, extension endpoints use callytics-extensions.
+const EXTENSIONS_CONTEXT = "callytics-extensions";
+const CALL_CONTEXTS = new Set(["callytics-inbound", EXTENSIONS_CONTEXT]);
 const BACKEND_URL = process.env.BACKEND_URL || "http://127.0.0.1:3001";
 const RECORDINGS_INTERNAL_TOKEN = process.env.RECORDINGS_INTERNAL_TOKEN || "";
 const STASIS_HEALTH_PORT = Number(process.env.STASIS_HEALTH_PORT || 3002);
@@ -186,6 +195,7 @@ interface TestPlaybackChannel {
 interface DirectOutboundSettingsResponse {
   default_outbound_trunk_id: number | null;
   record_outbound_calls: boolean;
+  numberSettings: OutboundNumberSettings;
 }
 
 interface DirectOutboundTrunkResponse {
@@ -340,12 +350,17 @@ async function fetchDirectOutboundSettings(): Promise<DirectOutboundSettingsResp
     throw new Error(`settings_lookup_failed status=${response.status} body=${body}`);
   }
 
-  const payload = (await response.json()) as {
-    data?: DirectOutboundSettingsResponse;
+  // GET /settings returns a flat object; accept a { data } wrapper as well.
+  const payload = (await response.json()) as Record<string, unknown> & {
+    data?: Record<string, unknown>;
   };
+  const settings = payload.data ?? payload;
   return {
-    default_outbound_trunk_id: payload.data?.default_outbound_trunk_id ?? null,
-    record_outbound_calls: Boolean(payload.data?.record_outbound_calls),
+    default_outbound_trunk_id: typeof settings.default_outbound_trunk_id === "number"
+      ? settings.default_outbound_trunk_id
+      : null,
+    record_outbound_calls: Boolean(settings.record_outbound_calls),
+    numberSettings: parseOutboundNumberSettings(settings),
   };
 }
 
@@ -596,14 +611,14 @@ async function handleDirectOutboundDial(
 ): Promise<void> {
   const calledExten = String(event.channel?.dialplan?.exten || "").trim();
   const callerNumber = String(event.channel?.caller?.number || "unknown").trim() || "unknown";
-  const destination = calledExten.slice(1).trim();
+  const dialedNumber = extractDialedNumber(calledExten);
   try {
     await startDirectOutboundMoh(ariClientRaw, channel.id);
   } catch (error) {
     stasisLogger.error("[direct-outbound] hold audio start failed:", error);
   }
 
-  if (!/^\d+$/.test(destination)) {
+  if (dialedNumber === null) {
     await channel.hangup().catch(() => undefined);
     return;
   }
@@ -624,6 +639,11 @@ async function handleDirectOutboundDial(
   if (!trunk) {
     await channel.hangup().catch(() => undefined);
     return;
+  }
+
+  const destination = normalizeOutboundNumber(dialedNumber, settings.numberSettings);
+  if (destination !== dialedNumber) {
+    stasisLogger.log(`[direct-outbound] normalized dialed number ${dialedNumber} to ${destination}`);
   }
 
   const call: DirectOutboundActiveCall = {
@@ -1200,7 +1220,7 @@ async function start(): Promise<void> {
         const channelContext = String(event.channel?.dialplan?.context || "");
         const channelExten = String(event.channel?.dialplan?.exten || "");
         if (
-          channelContext !== "callytics-inbound" ||
+          !CALL_CONTEXTS.has(channelContext) ||
           !channelExten ||
           channelExten === "h"
         ) {
@@ -1210,7 +1230,8 @@ async function start(): Promise<void> {
           return;
         }
 
-        if (channelExten.startsWith("#")) {
+        // Only extensions may dial out. A "#" number from a trunk is treated as an inbound call.
+        if (channelContext === EXTENSIONS_CONTEXT && channelExten.startsWith("#")) {
           await handleDirectOutboundDial(client, event, channel);
           return;
         }
