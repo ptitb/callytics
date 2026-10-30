@@ -177,6 +177,7 @@ const emptySettings: SystemSettings = {
   outbound_normalize_e164: true,
   outbound_country_code: '31',
   outbound_international_prefix: '00',
+  outbound_wait_audio: 'ringback',
 };
 
 function toForm(item: SipTrunkItem | null): TrunkFormState {

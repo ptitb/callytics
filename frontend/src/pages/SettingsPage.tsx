@@ -11,6 +11,7 @@ import {
   validateOutboundInternationalPrefix,
   validateRtpRange,
 } from '../lib/validation';
+import type { OutboundWaitAudio } from '../types';
 import { useToast } from '../context/ToastContext';
 import styles from './SettingsPage.module.css';
 
@@ -29,6 +30,7 @@ export function SettingsPage() {
   const [normalizeE164, setNormalizeE164] = useState(true);
   const [countryCode, setCountryCode] = useState('31');
   const [internationalPrefix, setInternationalPrefix] = useState('00');
+  const [waitAudio, setWaitAudio] = useState<OutboundWaitAudio>('ringback');
   const [outboundSaveState, setOutboundSaveState] = useState<SaveState>('idle');
   const [outboundError, setOutboundError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -47,6 +49,7 @@ export function SettingsPage() {
         setNormalizeE164(settings.outbound_normalize_e164 ?? true);
         setCountryCode(String(settings.outbound_country_code ?? '31'));
         setInternationalPrefix(String(settings.outbound_international_prefix ?? '00'));
+        setWaitAudio(settings.outbound_wait_audio ?? 'ringback');
       } catch (error) {
         setLoadError(getApiError(error, 'failed to load settings'));
       } finally {
@@ -127,11 +130,13 @@ export function SettingsPage() {
         outbound_normalize_e164: normalizeE164,
         outbound_country_code: countryCode,
         outbound_international_prefix: internationalPrefix,
+        outbound_wait_audio: waitAudio,
       });
       setDialWithoutHash(settings.outbound_dial_without_hash ?? dialWithoutHash);
       setNormalizeE164(settings.outbound_normalize_e164 ?? normalizeE164);
       setCountryCode(String(settings.outbound_country_code ?? countryCode));
       setInternationalPrefix(String(settings.outbound_international_prefix ?? internationalPrefix));
+      setWaitAudio(settings.outbound_wait_audio ?? waitAudio);
       setOutboundSaveState('saved');
       window.setTimeout(() => setOutboundSaveState('idle'), 2000);
     } catch (error) {
@@ -295,6 +300,20 @@ export function SettingsPage() {
               Spaces, dashes, dots and parentheses are removed. A number starting with 0 gets the country code, a number starting with the
               international prefix gets a +. With the defaults: 0612345678 becomes +31612345678, 0044... becomes +44..., +44... stays
               unchanged and short numbers like 112 stay unchanged. With conversion off, the number is sent as dialed.
+            </p>
+            <label className={styles.label} htmlFor="outbound-wait-audio">Waiting audio while dialing out</label>
+            <select
+              className={styles.input}
+              id="outbound-wait-audio"
+              onChange={(event) => setWaitAudio(event.target.value as OutboundWaitAudio)}
+              value={waitAudio}
+            >
+              <option value="ringback">Ringback tone</option>
+              <option value="moh">Hold music</option>
+            </select>
+            <p className={styles.note}>
+              What the extension hears until the other side answers. A ringback tone is played by the phone itself, hold music is
+              played by Asterisk.
             </p>
             {outboundError ? <p className={styles.note} role="alert">{outboundError}</p> : null}
           </div>

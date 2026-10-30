@@ -23,6 +23,7 @@ describe('SettingsPage coverage boost', () => {
       outbound_normalize_e164: true,
       outbound_country_code: '31',
       outbound_international_prefix: '00',
+      outbound_wait_audio: 'ringback',
     });
     vi.mocked(api.updateSettings).mockResolvedValue({
       default_outbound_trunk_id: null,
@@ -34,6 +35,7 @@ describe('SettingsPage coverage boost', () => {
       outbound_normalize_e164: true,
       outbound_country_code: '31',
       outbound_international_prefix: '00',
+      outbound_wait_audio: 'ringback',
     });
   });
 
@@ -51,6 +53,7 @@ describe('SettingsPage coverage boost', () => {
       outbound_dial_without_hash: false,
       outbound_country_code: '44',
       outbound_international_prefix: '011',
+      outbound_wait_audio: 'moh',
     });
     renderWithRouter(<SettingsPage />);
 
@@ -59,6 +62,9 @@ describe('SettingsPage coverage boost', () => {
     expect(screen.getByLabelText('Convert dialed numbers to E.164')).toBeChecked();
     expect(screen.getByLabelText('Country code')).toHaveValue('44');
     expect(screen.getByLabelText('International prefix')).toHaveValue('011');
+    expect(screen.getByLabelText('Waiting audio while dialing out')).toHaveValue('moh');
+    expect(screen.getByRole('option', { name: 'Ringback tone' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Hold music' })).toBeInTheDocument();
     expect(screen.getByText(/0612345678 becomes \+31612345678/)).toBeInTheDocument();
   });
 
@@ -70,6 +76,7 @@ describe('SettingsPage coverage boost', () => {
     fireEvent.click(screen.getByLabelText('Convert dialed numbers to E.164'));
     fireEvent.change(screen.getByLabelText('Country code'), { target: { value: '44' } });
     fireEvent.change(screen.getByLabelText('International prefix'), { target: { value: '011' } });
+    fireEvent.change(screen.getByLabelText('Waiting audio while dialing out'), { target: { value: 'moh' } });
     const saveButtons = screen.getAllByRole('button', { name: 'save' });
     fireEvent.click(saveButtons[2]);
 
@@ -78,6 +85,7 @@ describe('SettingsPage coverage boost', () => {
       outbound_normalize_e164: false,
       outbound_country_code: '44',
       outbound_international_prefix: '011',
+      outbound_wait_audio: 'moh',
     }));
   });
 

@@ -632,6 +632,8 @@ export interface TrunkIdentifyStatus {
 
 export type SettingValue = boolean | number | string | null;
 
+export type OutboundWaitAudio = 'ringback' | 'moh';
+
 export interface SystemSettings {
   default_outbound_trunk_id: number | null;
   record_outbound_calls: boolean;
@@ -642,6 +644,7 @@ export interface SystemSettings {
   outbound_normalize_e164: boolean;
   outbound_country_code: string;
   outbound_international_prefix: string;
+  outbound_wait_audio: OutboundWaitAudio;
 }
 
 export type SettingsPatch = Partial<SystemSettings> & Record<string, SettingValue | undefined>;
