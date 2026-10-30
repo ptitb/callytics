@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { getEnvRtpRange, validateRtpRange } from '../asterisk/rtp-range';
 import { runSqlMigrations } from '../db/run-sql-migrations';
 import { SipTrunkEntity } from '../trunks/entities/sip-trunk.entity';
+import { OUTBOUND_DEFAULTS, validateOutboundCountryCode, validateOutboundInternationalPrefix } from './outbound-dialing';
 import { SettingsEntity } from './settings.entity';
 
 export type SettingValue = boolean | number | string | null;
@@ -20,6 +21,7 @@ function buildSettingDefaults(): SettingsMap {
     recording_retention_days: 0,
     rtp_port_start: rtpRange.start,
     rtp_port_end: rtpRange.end,
+    ...OUTBOUND_DEFAULTS,
   };
 }
 
@@ -207,6 +209,23 @@ export class SettingsService implements OnModuleInit {
       return this.serializeValue(value);
     }
 
+    if (key === 'outbound_dial_without_hash' || key === 'outbound_normalize_e164') {
+      if (typeof value !== 'boolean') {
+        throw new BadRequestException(`${key} must be a boolean`);
+      }
+      return this.serializeValue(value);
+    }
+
+    if (key === 'outbound_country_code' || key === 'outbound_international_prefix') {
+      const message = key === 'outbound_country_code'
+        ? validateOutboundCountryCode(value)
+        : validateOutboundInternationalPrefix(value);
+      if (message) {
+        throw new BadRequestException(message);
+      }
+      return this.serializeValue(value);
+    }
+
     if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
       throw new BadRequestException(`unsupported value type for setting ${key}`);
     }
@@ -235,6 +254,19 @@ export class SettingsService implements OnModuleInit {
     if (key === 'rtp_port_start' || key === 'rtp_port_end') {
       const parsed = Number(value ?? '');
       return Number.isInteger(parsed) && parsed > 0 ? parsed : buildSettingDefaults()[key];
+    }
+
+    if (key === 'outbound_dial_without_hash' || key === 'outbound_normalize_e164') {
+      // Both default to on, so a missing or empty row reads as true.
+      return value === null || value === '' ? OUTBOUND_DEFAULTS[key] : value === 'true';
+    }
+
+    if (key === 'outbound_country_code') {
+      return validateOutboundCountryCode(value) ? OUTBOUND_DEFAULTS[key] : value;
+    }
+
+    if (key === 'outbound_international_prefix') {
+      return validateOutboundInternationalPrefix(value) ? OUTBOUND_DEFAULTS[key] : value;
     }
 
     return value;

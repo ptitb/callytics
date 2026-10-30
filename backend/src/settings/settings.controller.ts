@@ -29,6 +29,15 @@ export class SettingsController {
         );
       }
     }
+    if ('outbound_dial_without_hash' in patch) {
+      try {
+        await this.asteriskConfigService.syncDialplan();
+      } catch {
+        throw new BadGatewayException(
+          'Outbound dialing settings saved, but Asterisk could not reload the dialplan. Restart the asterisk container to apply it.',
+        );
+      }
+    }
     return settings;
   }
 

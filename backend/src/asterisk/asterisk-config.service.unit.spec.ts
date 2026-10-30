@@ -174,6 +174,88 @@ describe("AsteriskConfigService", () => {
     expect(content).toContain("exten => _#.,n,Hangup()");
   });
 
+  describe("dialplan contexts", () => {
+    const build = (dialWithoutHash?: boolean) =>
+      (service as any).buildInboundRoutesConfig(
+        [{ did: "1234" }],
+        [{ username: "1000" }],
+        dialWithoutHash,
+      ) as string;
+    const section = (content: string, name: string) => {
+      const start = content.indexOf(`[${name}]`);
+      const next = content.indexOf("\n[", start + 1);
+      return content.slice(start, next === -1 ? undefined : next);
+    };
+
+    it("never lets the trunk context dial out", () => {
+      const inbound = section(build(true), "callytics-inbound");
+      expect(inbound).toContain("exten => 1000,1,Dial(PJSIP/1000,30)");
+      expect(inbound).toContain("exten => 1234,1,Stasis(callytics)");
+      expect(inbound).not.toContain("_#.");
+      expect(inbound).not.toContain("Goto");
+    });
+
+    it("sends other numbers to the # path when dialing without # is on", () => {
+      const extensions = section(build(true), "callytics-extensions");
+      expect(extensions).toContain("exten => 1000,1,Dial(PJSIP/1000,30)");
+      expect(extensions).toContain("exten => 1234,1,Stasis(callytics)");
+      expect(extensions).toContain("exten => _#.,1,Stasis(callytics)");
+      expect(extensions).toContain("exten => _X.,1,Goto(callytics-extensions,#${EXTEN},1)");
+      expect(extensions).toContain("exten => _+X.,1,Goto(callytics-extensions,#${EXTEN},1)");
+    });
+
+    it("keeps the default flow for other numbers when dialing without # is off", () => {
+      const extensions = section(build(false), "callytics-extensions");
+      expect(extensions).toContain("exten => _#.,1,Stasis(callytics)");
+      expect(extensions).toContain("exten => _X.,1,Stasis(callytics)");
+      expect(extensions).not.toContain("Goto");
+      expect(extensions).not.toContain("_+X.");
+    });
+
+    it("defaults to dialing without # when no value is given", () => {
+      expect(build()).toContain("Goto(callytics-extensions");
+    });
+
+    it("keeps explicit extension and DID entries ahead of the patterns", () => {
+      const extensions = section(build(true), "callytics-extensions");
+      expect(extensions.indexOf("exten => 1234,1")).toBeLessThan(extensions.indexOf("exten => _X.,1"));
+    });
+  });
+
+  it("puts extension endpoints in callytics-extensions", () => {
+    const content = (service as any).buildExtensionsConfig(
+      [
+        { username: "1000", password: "x", transport: "transport-udp", endpointFlags: [] },
+        { username: "1001", password: "x", transport: "transport-tls", endpointFlags: ["media_encryption = sdes"] },
+        { username: "1002", password: "x", transport: "transport-wss", endpointFlags: ["webrtc = yes"] },
+      ],
+      null,
+    ) as string;
+    expect(content.match(/context = callytics-extensions/g)).toHaveLength(3);
+    expect(content).not.toContain("callytics-inbound");
+  });
+
+  it("keeps trunk endpoints in callytics-inbound", () => {
+    const content = (service as any).buildTrunksConfig([
+      { id: 1, name: "t", host: "sip.example.com", port: 5060, providerPreset: "generic", enabled: true },
+    ]) as string;
+    expect(content).toContain("context = callytics-inbound");
+    expect(content).not.toContain("callytics-extensions");
+  });
+
+  it("reads the dial without # setting and defaults to on", async () => {
+    const query = jest.fn();
+    const withData = new AsteriskConfigService({} as never, {} as never, {} as never, { query } as never, {} as never);
+    query.mockResolvedValueOnce([{ value: "false" }]);
+    await expect(withData.getOutboundDialWithoutHash()).resolves.toBe(false);
+    query.mockResolvedValueOnce([{ value: "true" }]);
+    await expect(withData.getOutboundDialWithoutHash()).resolves.toBe(true);
+    query.mockResolvedValueOnce([]);
+    await expect(withData.getOutboundDialWithoutHash()).resolves.toBe(true);
+    query.mockRejectedValueOnce(new Error("no table"));
+    await expect(withData.getOutboundDialWithoutHash()).resolves.toBe(true);
+  });
+
   it("AMI reload commands are called after extension config is written", async () => {
     const spyWrite = jest
       .spyOn(service, "writeExtensionsConfig")
@@ -191,6 +273,18 @@ describe("AsteriskConfigService", () => {
     expect(spyInboundWrite).toHaveBeenCalled();
     expect(spyReload).toHaveBeenCalledWith("module reload res_pjsip.so");
     expect(spyReload).toHaveBeenCalledWith("dialplan reload");
+  });
+
+  it("syncDialplan rewrites the dialplan and surfaces a reload failure", async () => {
+    const spyWrite = jest.spyOn(service, "writeInboundRoutesConfig").mockResolvedValue();
+    const spyAmi = jest.spyOn(service as any, "sendAmiCommand").mockResolvedValue(undefined);
+
+    await service.syncDialplan();
+    expect(spyWrite).toHaveBeenCalled();
+    expect(spyAmi).toHaveBeenCalledWith("dialplan reload");
+
+    spyAmi.mockRejectedValue(new Error("ami down"));
+    await expect(service.syncDialplan()).rejects.toThrow("ami down");
   });
 
   it("syncUdpTransport rewrites the transport block and reloads pjsip", async () => {

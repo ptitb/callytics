@@ -106,3 +106,91 @@ describe('SettingsService', () => {
     await expect(service.getDefaultTrunk()).resolves.toEqual({ data: null });
   });
 });
+
+describe('SettingsService outbound dialing settings', () => {
+  let service: SettingsService;
+  const settingsRepository = {
+    findOne: jest.fn(),
+    find: jest.fn(),
+    create: jest.fn((value: object) => value),
+    merge: jest.fn(),
+    save: jest.fn(),
+  };
+
+  beforeEach(async () => {
+    jest.clearAllMocks();
+    settingsRepository.findOne.mockImplementation(async ({ where }: { where: { key: string } }) => ({ key: where.key, value: 'y' }));
+    settingsRepository.find.mockResolvedValue([]);
+    settingsRepository.merge.mockImplementation((entity: object, patch: object) => ({ ...entity, ...patch }));
+    const module: TestingModule = await Test.createTestingModule({
+      providers: [
+        SettingsService,
+        { provide: getDataSourceToken(), useValue: { query: jest.fn() } },
+        { provide: getRepositoryToken(SettingsEntity), useValue: settingsRepository },
+        { provide: getRepositoryToken(SipTrunkEntity), useValue: { findOne: jest.fn() } },
+      ],
+    }).compile();
+    service = module.get(SettingsService);
+  });
+
+  it('seeds the outbound defaults', async () => {
+    settingsRepository.findOne.mockResolvedValue(null);
+    await service.get('outbound_country_code');
+    const seeded = Object.fromEntries(
+      settingsRepository.save.mock.calls.map(([row]: [{ key: string; value: string }]) => [row.key, row.value]),
+    );
+    expect(seeded).toMatchObject({
+      outbound_dial_without_hash: 'true',
+      outbound_normalize_e164: 'true',
+      outbound_country_code: '31',
+      outbound_international_prefix: '00',
+    });
+  });
+
+  it('reads stored outbound settings with the right types', async () => {
+    settingsRepository.find.mockResolvedValue([
+      { key: 'outbound_dial_without_hash', value: 'false' },
+      { key: 'outbound_normalize_e164', value: 'true' },
+      { key: 'outbound_country_code', value: '44' },
+      { key: 'outbound_international_prefix', value: '011' },
+    ]);
+    await expect(service.getAll()).resolves.toEqual({
+      outbound_dial_without_hash: false,
+      outbound_normalize_e164: true,
+      outbound_country_code: '44',
+      outbound_international_prefix: '011',
+    });
+  });
+
+  it('saves valid outbound settings', async () => {
+    await service.updateMany({
+      outbound_dial_without_hash: false,
+      outbound_normalize_e164: false,
+      outbound_country_code: '44',
+      outbound_international_prefix: '011',
+    });
+    const saved = settingsRepository.save.mock.calls.map(([row]: [{ key: string; value: string }]) => [row.key, row.value]);
+    expect(saved).toEqual(expect.arrayContaining([
+      ['outbound_dial_without_hash', 'false'],
+      ['outbound_normalize_e164', 'false'],
+      ['outbound_country_code', '44'],
+      ['outbound_international_prefix', '011'],
+    ]));
+  });
+
+  it.each([
+    ['outbound_dial_without_hash', 'yes'],
+    ['outbound_normalize_e164', 1],
+    ['outbound_country_code', ''],
+    ['outbound_country_code', '+31'],
+    ['outbound_country_code', '3100'],
+    ['outbound_country_code', '031'],
+    ['outbound_country_code', 31],
+    ['outbound_international_prefix', ''],
+    ['outbound_international_prefix', '00000'],
+    ['outbound_international_prefix', '0a'],
+    ['outbound_international_prefix', null],
+  ])('rejects %s = %p', async (key, value) => {
+    await expect(service.updateMany({ [key]: value as never })).rejects.toThrow(BadRequestException);
+  });
+});

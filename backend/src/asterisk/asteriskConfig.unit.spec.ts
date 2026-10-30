@@ -65,7 +65,7 @@ describe('AsteriskConfigService config generation', () => {
     expect(content).toContain('username = 2001');
   });
 
-  it('generates correct inbound routes config with one exten line per route and no duplicates', () => {
+  it('generates one exten line per route in each context and no duplicates', () => {
     const service = createService();
     const content = (service as any).buildInboundRoutesConfig(
       [
@@ -78,7 +78,8 @@ describe('AsteriskConfigService config generation', () => {
     expect(content).toContain('exten => 1000,1,Dial(PJSIP/1000,30)');
     expect(content).toContain('exten => 1234,1,Stasis(callytics)');
     expect(content).toContain('exten => 5678,1,Stasis(callytics)');
-    expect(content.match(/exten => 1234,1,Stasis\(callytics\)/g)).toHaveLength(1);
-    expect(content.match(/exten => 5678,1,Stasis\(callytics\)/g)).toHaveLength(1);
+    // once in callytics-inbound and once in callytics-extensions
+    expect(content.match(/exten => 1234,1,Stasis\(callytics\)/g)).toHaveLength(2);
+    expect(content.match(/exten => 5678,1,Stasis\(callytics\)/g)).toHaveLength(2);
   });
 });
