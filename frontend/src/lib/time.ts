@@ -33,8 +33,8 @@ function buildFormatter(options: Intl.DateTimeFormatOptions): Intl.DateTimeForma
 }
 
 /**
- * Formats a date-time value as "30-10-2026 16:41".
- * Numeric day-month-year, 24h time, no seconds.
+ * Formats a date-time value as "30-10-2026 16:41:05".
+ * Numeric day-month-year, 24h time with seconds.
  * A value that is not a valid date is returned unchanged.
  */
 export function formatDateTime(value: string | Date): string {
@@ -48,10 +48,11 @@ export function formatDateTime(value: string | Date): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   }).formatToParts(d);
   const map = new Map(parts.map((part) => [part.type, part.value]));
-  return `${map.get('day')}-${map.get('month')}-${map.get('year')} ${map.get('hour')}:${map.get('minute')}`;
+  return `${map.get('day')}-${map.get('month')}-${map.get('year')} ${map.get('hour')}:${map.get('minute')}:${map.get('second')}`;
 }
 
 /**

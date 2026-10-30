@@ -41,7 +41,7 @@ type ResizableColumn = 'timestamp' | 'level' | 'channel' | 'module';
 
 // The message column takes the remaining width.
 const DEFAULT_COLUMN_WIDTHS: Record<ResizableColumn, number> = {
-  timestamp: 172,
+  timestamp: 196,
   level: 96,
   channel: 120,
   module: 140,

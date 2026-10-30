@@ -11,10 +11,11 @@ function expectedDateTime(value: string): string {
     year: 'numeric',
     hour: '2-digit',
     minute: '2-digit',
+    second: '2-digit',
     hour12: false,
   }).formatToParts(new Date(value));
   const map = new Map(parts.map((part) => [part.type, part.value]));
-  return `${map.get('day')}-${map.get('month')}-${map.get('year')} ${map.get('hour')}:${map.get('minute')}`;
+  return `${map.get('day')}-${map.get('month')}-${map.get('year')} ${map.get('hour')}:${map.get('minute')}:${map.get('second')}`;
 }
 
 function expectedPacketTime(value: string): string {
@@ -101,8 +102,8 @@ describe('formatPacketTimestamp', () => {
 });
 
 describe('formatDateTime numeric format', () => {
-  it('formats as dd-mm-yyyy HH:mm', () => {
-    expect(formatDateTime('2026-10-30T16:41:00.000Z')).toMatch(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}$/);
+  it('formats as dd-mm-yyyy HH:mm:ss', () => {
+    expect(formatDateTime('2026-10-30T16:41:05.000Z')).toMatch(/^\d{2}-\d{2}-\d{4} \d{2}:\d{2}:05$/);
   });
 
   it('returns an invalid date string unchanged instead of throwing', () => {
