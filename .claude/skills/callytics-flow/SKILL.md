@@ -124,5 +124,5 @@ Greeting then agents: `start` to `play_audio` to `hunt` (see `examples/minimal.j
 - Business hours cannot cross midnight, and each node evaluates the clock in its own timezone.
 - `hunt` to `voicemail` and `transfer` to `voicemail` edges are rejected, use `on_no_answer`.
 - Transfer, voicemail, callback, queue_login, hangup cannot have outgoing edges.
-- `docs-site/features/ivr.md` still names the business hours edges `in-hours` and `out-of-hours`. The code and the editor use `open` and `closed`.
+- Business hours edges are `open` and `closed` (older docs called them `in-hours` and `out-of-hours`).
 - A `queue` result without an edge ends the call as failed (read from `runtime.ts`, not run). Add edges for `connected`, `timeout` and `abandoned`. `conference` participants are not covered here.

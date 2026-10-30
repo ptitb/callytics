@@ -100,7 +100,7 @@ Routes the call based on configured weekly schedules.
 
 - **Config:** Weekly schedule per day with start and end times
 - **Behaviour:** Checks the current server time against the configured schedule at the moment the node is reached
-- **Edges:** Two edges — `in-hours` and `out-of-hours`
+- **Edges:** Two edges, `open` (in hours) and `closed` (out of hours)
 - **Limitation:** Midnight-crossing schedules (for example, 22:00–02:00) are not currently supported
 
 ### Transfer
