@@ -26,6 +26,18 @@ Some providers deliver calls from fixed IP addresses and do not register. Enter 
 
 After saving, the trunk form shows whether the identify object is loaded in Asterisk (`pjsip show identifies`).
 
+### Example: MessageBird (Bird)
+
+MessageBird delivers inbound calls from these addresses. Enter them in **Inbound IP addresses**:
+
+```
+35.205.0.36
+35.227.0.132
+35.234.192.68
+```
+
+Allow the same addresses on the SIP port in the host firewall (see `PROVIDER_IPS` in `deploy/examples/ufw.example.sh`). Providers can change their addresses; when inbound calls stop arriving, check the current list with the provider and update both the trunk and the firewall.
+
 ## Outbound authentication
 
 When a username and password are filled in, Callytics generates an auth section and sets `outbound_auth` on the trunk endpoint, so providers that challenge outbound calls with digest authentication work. For presets that do not register (Twilio, Telnyx, Vonage, SignalWire) no registration is created. With the generic preset a registration is created as well.

@@ -213,6 +213,16 @@ Open `https://callytics.example.com` via het tailnet.
 1. Ga naar Configure > Trunks en kies Add trunk.
 2. Vul `host` in met het SIP-adres van de provider. `port` is de poort van de provider (meestal 5060).
 3. Vul `inbound IP addresses` in met alle `<provider-ip>`-adressen, één per regel (IPv4 of CIDR). Inkomende gesprekken van deze adressen worden aan de trunk gekoppeld via een `identify`-sectie.
+
+   Voor MessageBird (Bird) zijn dat:
+
+   ```
+   35.205.0.36
+   35.227.0.132
+   35.234.192.68
+   ```
+
+   Dezelfde adressen staan in `PROVIDER_IPS` in `deploy/examples/ufw.example.sh`. Controleer bij een storing of MessageBird de lijst heeft gewijzigd, en pas dan zowel de trunk als de firewall aan.
 4. Vul `from domain` en `from user` in zoals de provider verwacht.
 5. Laat `username` leeg. Bij pure IP-whitelisting zijn er geen credentials en wordt er niet geregistreerd.
 6. Gebruik credentials alleen als de provider digest-authenticatie vraagt. Let op: met de preset `generic` en ingevulde credentials registreert Callytics zich ook bij de provider. De presets `twilio`, `telnyx`, `vonage` en `signalwire` registreren niet.

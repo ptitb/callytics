@@ -15,8 +15,10 @@ exit 1
 
 set -euo pipefail
 
-# Placeholders: replace with real values (documentation addresses used here).
-PROVIDER_IPS=("203.0.113.10" "203.0.113.11")  # SIP provider addresses (inbound whitelist)
+# Adjust these values to your setup.
+# SIP provider addresses (inbound whitelist), space separated, no commas.
+# These are the MessageBird (Bird) addresses; replace them for another provider.
+PROVIDER_IPS=("35.205.0.36" "35.227.0.132" "35.234.192.68")
 SIP_PORT=5080                                  # SIP_PORT in .env
 SIP_TLS_PORT=5081                              # SIP_TLS_PORT in .env
 RTP_START=10100                                # RTP_PORT_START in .env
