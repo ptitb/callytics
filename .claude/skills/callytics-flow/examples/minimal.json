@@ -1,0 +1,36 @@
+{
+  "format": "callytics-flow",
+  "version": 1,
+  "name": "Greeting, hunt, voicemail",
+  "description": "Plays a greeting, rings one extension and falls back to voicemail. Replace the REPLACE-ME value and the placeholder audio id 999999 before use.",
+  "nodes": [
+    { "nodeKey": "start", "type": "start", "label": "Start", "config": { "flow_default_timeout_ms": 10000 }, "positionX": 0, "positionY": 0 },
+    { "nodeKey": "greeting", "type": "play_audio", "label": "Greeting (set audio)", "config": { "audio_file_id": 999999 }, "positionX": 0, "positionY": 150 },
+    {
+      "nodeKey": "hunt",
+      "type": "hunt",
+      "label": "Ring reception",
+      "config": {
+        "destinations": [{ "target_type": "extension", "target_value": "REPLACE-ME" }],
+        "strategy": "sequential",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000,
+        "on_no_answer": "voicemail"
+      },
+      "positionX": 0,
+      "positionY": 300
+    },
+    {
+      "nodeKey": "voicemail",
+      "type": "voicemail",
+      "label": "Voicemail (set intro audio)",
+      "config": { "mailbox_name": "main", "max_duration_seconds": 60, "start_audio_id": 999999 },
+      "positionX": 0,
+      "positionY": 450
+    }
+  ],
+  "edges": [
+    { "sourceNodeKey": "start", "targetNodeKey": "greeting", "branchKey": "default" },
+    { "sourceNodeKey": "greeting", "targetNodeKey": "hunt", "branchKey": "default" }
+  ]
+}

@@ -1,0 +1,676 @@
+{
+  "format": "callytics-flow",
+  "version": 1,
+  "exportedAt": "2026-10-30T23:18:54.581Z",
+  "name": "Weekday hunt with closed menu",
+  "description": "Monday to Friday business hours chain. Each open day hunts, then voicemail on no answer. Outside hours: weekend message on Saturday and Sunday, weekday-evening message otherwise, then menu (1 callback, 2 voicemail). Replace all REPLACE-ME values and placeholder audio id 999999 before use.",
+  "nodes": [
+    {
+      "nodeKey": "start",
+      "type": "start",
+      "label": "Start",
+      "config": {
+        "flow_default_timeout_ms": 10000
+      },
+      "positionX": 0,
+      "positionY": 100
+    },
+    {
+      "nodeKey": "bh_monday",
+      "type": "business_hours",
+      "label": "Monday",
+      "config": {
+        "timezone": "Europe/Amsterdam",
+        "schedule": {
+          "monday": {
+            "enabled": true,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "tuesday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "wednesday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "thursday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "friday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "saturday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "sunday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          }
+        }
+      },
+      "positionX": 300,
+      "positionY": 100
+    },
+    {
+      "nodeKey": "hunt_monday",
+      "type": "hunt",
+      "label": "Hunt Monday (add agents)",
+      "config": {
+        "destinations": [
+          {
+            "target_type": "extension",
+            "target_value": "REPLACE-ME"
+          }
+        ],
+        "strategy": "group",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000,
+        "hold_audio_file_id": null,
+        "busy_audio_file_id": null,
+        "on_no_answer": "vm_monday",
+        "record_call": false,
+        "send_to_webhook": false
+      },
+      "positionX": 300,
+      "positionY": 350
+    },
+    {
+      "nodeKey": "vm_monday",
+      "type": "voicemail",
+      "label": "Voicemail (no answer) Monday (set intro audio)",
+      "config": {
+        "mailbox_name": "main",
+        "max_duration_seconds": 60,
+        "start_audio_id": 999999,
+        "end_audio_id": null,
+        "send_to_webhook": false
+      },
+      "positionX": 300,
+      "positionY": 600
+    },
+    {
+      "nodeKey": "bh_tuesday",
+      "type": "business_hours",
+      "label": "Tuesday",
+      "config": {
+        "timezone": "Europe/Amsterdam",
+        "schedule": {
+          "monday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "tuesday": {
+            "enabled": true,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "wednesday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "thursday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "friday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "saturday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "sunday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          }
+        }
+      },
+      "positionX": 720,
+      "positionY": 100
+    },
+    {
+      "nodeKey": "hunt_tuesday",
+      "type": "hunt",
+      "label": "Hunt Tuesday (add agents)",
+      "config": {
+        "destinations": [
+          {
+            "target_type": "extension",
+            "target_value": "REPLACE-ME"
+          }
+        ],
+        "strategy": "group",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000,
+        "hold_audio_file_id": null,
+        "busy_audio_file_id": null,
+        "on_no_answer": "vm_tuesday",
+        "record_call": false,
+        "send_to_webhook": false
+      },
+      "positionX": 720,
+      "positionY": 350
+    },
+    {
+      "nodeKey": "vm_tuesday",
+      "type": "voicemail",
+      "label": "Voicemail (no answer) Tuesday (set intro audio)",
+      "config": {
+        "mailbox_name": "main",
+        "max_duration_seconds": 60,
+        "start_audio_id": 999999,
+        "end_audio_id": null,
+        "send_to_webhook": false
+      },
+      "positionX": 720,
+      "positionY": 600
+    },
+    {
+      "nodeKey": "bh_wednesday",
+      "type": "business_hours",
+      "label": "Wednesday",
+      "config": {
+        "timezone": "Europe/Amsterdam",
+        "schedule": {
+          "monday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "tuesday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "wednesday": {
+            "enabled": true,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "thursday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "friday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "saturday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "sunday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          }
+        }
+      },
+      "positionX": 1140,
+      "positionY": 100
+    },
+    {
+      "nodeKey": "hunt_wednesday",
+      "type": "hunt",
+      "label": "Hunt Wednesday (add agents)",
+      "config": {
+        "destinations": [
+          {
+            "target_type": "extension",
+            "target_value": "REPLACE-ME"
+          }
+        ],
+        "strategy": "group",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000,
+        "hold_audio_file_id": null,
+        "busy_audio_file_id": null,
+        "on_no_answer": "vm_wednesday",
+        "record_call": false,
+        "send_to_webhook": false
+      },
+      "positionX": 1140,
+      "positionY": 350
+    },
+    {
+      "nodeKey": "vm_wednesday",
+      "type": "voicemail",
+      "label": "Voicemail (no answer) Wednesday (set intro audio)",
+      "config": {
+        "mailbox_name": "main",
+        "max_duration_seconds": 60,
+        "start_audio_id": 999999,
+        "end_audio_id": null,
+        "send_to_webhook": false
+      },
+      "positionX": 1140,
+      "positionY": 600
+    },
+    {
+      "nodeKey": "bh_thursday",
+      "type": "business_hours",
+      "label": "Thursday",
+      "config": {
+        "timezone": "Europe/Amsterdam",
+        "schedule": {
+          "monday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "tuesday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "wednesday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "thursday": {
+            "enabled": true,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "friday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "saturday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "sunday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          }
+        }
+      },
+      "positionX": 1560,
+      "positionY": 100
+    },
+    {
+      "nodeKey": "hunt_thursday",
+      "type": "hunt",
+      "label": "Hunt Thursday (add agents)",
+      "config": {
+        "destinations": [
+          {
+            "target_type": "extension",
+            "target_value": "REPLACE-ME"
+          }
+        ],
+        "strategy": "group",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000,
+        "hold_audio_file_id": null,
+        "busy_audio_file_id": null,
+        "on_no_answer": "vm_thursday",
+        "record_call": false,
+        "send_to_webhook": false
+      },
+      "positionX": 1560,
+      "positionY": 350
+    },
+    {
+      "nodeKey": "vm_thursday",
+      "type": "voicemail",
+      "label": "Voicemail (no answer) Thursday (set intro audio)",
+      "config": {
+        "mailbox_name": "main",
+        "max_duration_seconds": 60,
+        "start_audio_id": 999999,
+        "end_audio_id": null,
+        "send_to_webhook": false
+      },
+      "positionX": 1560,
+      "positionY": 600
+    },
+    {
+      "nodeKey": "bh_friday",
+      "type": "business_hours",
+      "label": "Friday",
+      "config": {
+        "timezone": "Europe/Amsterdam",
+        "schedule": {
+          "monday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "tuesday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "wednesday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "thursday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "friday": {
+            "enabled": true,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "saturday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          },
+          "sunday": {
+            "enabled": false,
+            "open": "09:00",
+            "close": "17:00"
+          }
+        }
+      },
+      "positionX": 1980,
+      "positionY": 100
+    },
+    {
+      "nodeKey": "hunt_friday",
+      "type": "hunt",
+      "label": "Hunt Friday (add agents)",
+      "config": {
+        "destinations": [
+          {
+            "target_type": "extension",
+            "target_value": "REPLACE-ME"
+          }
+        ],
+        "strategy": "group",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000,
+        "hold_audio_file_id": null,
+        "busy_audio_file_id": null,
+        "on_no_answer": "vm_friday",
+        "record_call": false,
+        "send_to_webhook": false
+      },
+      "positionX": 1980,
+      "positionY": 350
+    },
+    {
+      "nodeKey": "vm_friday",
+      "type": "voicemail",
+      "label": "Voicemail (no answer) Friday (set intro audio)",
+      "config": {
+        "mailbox_name": "main",
+        "max_duration_seconds": 60,
+        "start_audio_id": 999999,
+        "end_audio_id": null,
+        "send_to_webhook": false
+      },
+      "positionX": 1980,
+      "positionY": 600
+    },
+    {
+      "nodeKey": "closed_message_weekday",
+      "type": "play_audio",
+      "label": "Closed message weekday evenings (set audio)",
+      "config": {
+        "audio_file_path": "",
+        "audio_file_id": 999999
+      },
+      "positionX": 2400,
+      "positionY": 250
+    },
+    {
+      "nodeKey": "closed_menu",
+      "type": "menu",
+      "label": "Closed menu (set prompt)",
+      "config": {
+        "timeout_ms": 5000,
+        "prompt_path": "",
+        "prompt_audio_file_id": 999999,
+        "timeout_prompt_audio_id": null,
+        "invalid_prompt_audio_id": null,
+        "final_failure_audio_id": null,
+        "max_timeout_attempts": 3,
+        "max_invalid_attempts": 3,
+        "branches": [
+          "1",
+          "2"
+        ],
+        "submenu_branch_names": {}
+      },
+      "positionX": 2800,
+      "positionY": 100
+    },
+    {
+      "nodeKey": "closed_callback",
+      "type": "callback",
+      "label": "Callback (set destination)",
+      "config": {
+        "number_source": "ani",
+        "dtmf_prompt_audio_id": null,
+        "dtmf_max_digits": 11,
+        "confirmation_audio_id": null,
+        "destination_type": "extension",
+        "destination_value": "REPLACE-ME",
+        "destination_trunk_id": null,
+        "operator_id": null
+      },
+      "positionX": 3150,
+      "positionY": 0
+    },
+    {
+      "nodeKey": "closed_voicemail",
+      "type": "voicemail",
+      "label": "Voicemail (closed, set intro audio)",
+      "config": {
+        "mailbox_name": "main",
+        "max_duration_seconds": 60,
+        "start_audio_id": 999999,
+        "end_audio_id": null,
+        "send_to_webhook": false
+      },
+      "positionX": 3150,
+      "positionY": 300
+    },
+    {
+      "nodeKey": "bh_weekend",
+      "type": "business_hours",
+      "label": "Weekend",
+      "config": {
+        "timezone": "Europe/Amsterdam",
+        "schedule": {
+          "monday": {
+            "enabled": false,
+            "open": "00:00",
+            "close": "23:59"
+          },
+          "tuesday": {
+            "enabled": false,
+            "open": "00:00",
+            "close": "23:59"
+          },
+          "wednesday": {
+            "enabled": false,
+            "open": "00:00",
+            "close": "23:59"
+          },
+          "thursday": {
+            "enabled": false,
+            "open": "00:00",
+            "close": "23:59"
+          },
+          "friday": {
+            "enabled": false,
+            "open": "00:00",
+            "close": "23:59"
+          },
+          "saturday": {
+            "enabled": true,
+            "open": "00:00",
+            "close": "23:59"
+          },
+          "sunday": {
+            "enabled": true,
+            "open": "00:00",
+            "close": "23:59"
+          }
+        }
+      },
+      "positionX": 2400,
+      "positionY": -50
+    },
+    {
+      "nodeKey": "closed_message_weekend",
+      "type": "play_audio",
+      "label": "Closed message weekend (set audio)",
+      "config": {
+        "audio_file_path": "",
+        "audio_file_id": 999999
+      },
+      "positionX": 2400,
+      "positionY": -200
+    }
+  ],
+  "edges": [
+    {
+      "sourceNodeKey": "start",
+      "targetNodeKey": "bh_monday",
+      "branchKey": "default"
+    },
+    {
+      "sourceNodeKey": "bh_monday",
+      "targetNodeKey": "hunt_monday",
+      "branchKey": "open",
+      "condition": "open",
+      "sourceHandle": "open"
+    },
+    {
+      "sourceNodeKey": "bh_monday",
+      "targetNodeKey": "bh_tuesday",
+      "branchKey": "closed",
+      "condition": "closed",
+      "sourceHandle": "closed"
+    },
+    {
+      "sourceNodeKey": "bh_tuesday",
+      "targetNodeKey": "hunt_tuesday",
+      "branchKey": "open",
+      "condition": "open",
+      "sourceHandle": "open"
+    },
+    {
+      "sourceNodeKey": "bh_tuesday",
+      "targetNodeKey": "bh_wednesday",
+      "branchKey": "closed",
+      "condition": "closed",
+      "sourceHandle": "closed"
+    },
+    {
+      "sourceNodeKey": "bh_wednesday",
+      "targetNodeKey": "hunt_wednesday",
+      "branchKey": "open",
+      "condition": "open",
+      "sourceHandle": "open"
+    },
+    {
+      "sourceNodeKey": "bh_wednesday",
+      "targetNodeKey": "bh_thursday",
+      "branchKey": "closed",
+      "condition": "closed",
+      "sourceHandle": "closed"
+    },
+    {
+      "sourceNodeKey": "bh_thursday",
+      "targetNodeKey": "hunt_thursday",
+      "branchKey": "open",
+      "condition": "open",
+      "sourceHandle": "open"
+    },
+    {
+      "sourceNodeKey": "bh_thursday",
+      "targetNodeKey": "bh_friday",
+      "branchKey": "closed",
+      "condition": "closed",
+      "sourceHandle": "closed"
+    },
+    {
+      "sourceNodeKey": "bh_friday",
+      "targetNodeKey": "hunt_friday",
+      "branchKey": "open",
+      "condition": "open",
+      "sourceHandle": "open"
+    },
+    {
+      "sourceNodeKey": "bh_friday",
+      "targetNodeKey": "bh_weekend",
+      "branchKey": "closed",
+      "condition": "closed",
+      "sourceHandle": "closed"
+    },
+    {
+      "sourceNodeKey": "closed_message_weekday",
+      "targetNodeKey": "closed_menu",
+      "branchKey": "default"
+    },
+    {
+      "sourceNodeKey": "closed_menu",
+      "targetNodeKey": "closed_callback",
+      "branchKey": "1",
+      "condition": "1",
+      "sourceHandle": "1"
+    },
+    {
+      "sourceNodeKey": "closed_menu",
+      "targetNodeKey": "closed_voicemail",
+      "branchKey": "2",
+      "condition": "2",
+      "sourceHandle": "2"
+    },
+    {
+      "sourceNodeKey": "bh_weekend",
+      "targetNodeKey": "closed_message_weekend",
+      "branchKey": "open",
+      "condition": "open",
+      "sourceHandle": "open"
+    },
+    {
+      "sourceNodeKey": "bh_weekend",
+      "targetNodeKey": "closed_message_weekday",
+      "branchKey": "closed",
+      "condition": "closed",
+      "sourceHandle": "closed"
+    },
+    {
+      "sourceNodeKey": "closed_message_weekend",
+      "targetNodeKey": "closed_menu",
+      "branchKey": "default"
+    }
+  ]
+}
