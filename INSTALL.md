@@ -24,9 +24,9 @@ Browser (tailnet) --HTTPS 443--> Caddy --> nginx 127.0.0.1:3000 --> backend 127.
 | 5080 | UDP | Callytics SIP voor de provider (`SIP_PORT`) | Alleen `<provider-ip>` (ufw) |
 | 5081 | TCP | Callytics SIP TLS voor Groundwire (`SIP_TLS_PORT`) | Publiek |
 | 10100-10120 | UDP | Callytics RTP (audio) | Publiek |
-| 5060 | UDP | FreePBX SIP | Alleen provider (bestaande FreePBX-regel) |
+| 5060 | UDP | FreePBX SIP | Niet in het ufw-voorbeeld, zelf regelen (stap 6) |
 | 5061 | TCP | FreePBX SIP TLS (later) | Gereserveerd voor FreePBX, daarom gebruikt Callytics 5081 |
-| 10000-20000 | UDP | FreePBX RTP | Bestaande FreePBX-regel |
+| 10000-20000 | UDP | FreePBX RTP | Niet in het ufw-voorbeeld, zelf regelen (stap 6) |
 | 3478 | UDP | Headscale DERP/STUN (alleen als Headscale op deze server draait) | Publiek |
 | 3000 | TCP | Callytics web (nginx) | Alleen `127.0.0.1` |
 | 3001 | TCP | Callytics backend API | Alleen `127.0.0.1` |
@@ -164,9 +164,10 @@ Volgorde:
 5. `SIP_PORT` (5080/udp) alleen vanaf elk `<provider-ip>`.
 6. `SIP_TLS_PORT` (5081/tcp) voor iedereen.
 7. Callytics RTP-bereik (10100-10120/udp) voor iedereen.
-8. De bestaande FreePBX-regels behouden: 5060/udp vanaf de provider, 10000:20000/udp, later 5061/tcp.
-9. Draait Headscale op deze server: 3478/udp voor DERP/STUN.
-10. `ufw show added` lezen en daarna `ufw enable`.
+8. Draait Headscale op deze server: 3478/udp voor DERP/STUN.
+9. `ufw show added` lezen en daarna `ufw enable`.
+
+Het voorbeeld bevat geen regels voor andere diensten op de server, zoals FreePBX. Gebruikt FreePBX nu poorten van buiten (5060/udp, 10000-20000/udp, later 5061/tcp), voeg die regels dan zelf toe vóór `ufw enable`. Anders is FreePBX daarna niet meer bereikbaar.
 
 Poort 5081 staat open voor iedereen. Dat is nodig, omdat Acrobits-pushnotificaties via hun eigen servers registreren (zie stap 9). De bescherming bestaat uit een sterk extensiewachtwoord en verplichte TLS met SRTP. Er is geen testaccount op de SIP-poort aanwezig (het vaste `test-phone`-endpoint is verwijderd).
 
