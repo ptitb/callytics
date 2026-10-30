@@ -22,6 +22,8 @@
     "start": "docker compose up -d",
     "stop": "docker compose down",
     "logs": "docker compose logs -f",
-    "status": "docker compose ps"
+    "status": "docker compose ps",
+    "flow:validate": "TS_NODE_PROJECT=scripts/flow-tools/tsconfig.json ts-node scripts/flow-tools/validate.ts",
+    "flow:simulate": "TS_NODE_PROJECT=scripts/flow-tools/tsconfig.json ts-node scripts/flow-tools/simulate.ts"
   }
 }
