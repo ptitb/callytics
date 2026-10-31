@@ -12,7 +12,7 @@ Code to read when in doubt: `backend/src/flows/flow-document.ts` (format), `back
 ## Workflow
 
 1. Design the flow as nodes and edges first. Ask only for what you cannot invent (timezone, hours, number of days, what happens after hours).
-2. Write the JSON file (start from `examples/minimal.json` or `examples/weekday-hunt-closed-menu.json`).
+2. Write the JSON file (start from `examples/minimal.json` or `examples/weekday-hunt-closed-menu.json`, or `examples/email-notifications.json` when mails are wanted).
 3. `npm run flow:validate -- file.json` from the repo root. Fix every `INVALID` and read every warning.
 4. `npm run flow:simulate -- file.json --at <datetime> --tz <zone> [--digits 1,2] [--hunt answered|no-answer]` for each key scenario (open, closed, weekend, each menu digit, no answer). Check the node path, not only the end.
 5. Give the user the file plus the fill-in checklist printed by validate (audio files, extensions, numbers, trunks, queues).
@@ -115,6 +115,15 @@ Closed menu: `play_audio` (message) then `menu` with branches `1` and `2`, for e
 Voicemail on no answer: `hunt` or `transfer` with `on_no_answer` set to the voicemail nodeKey.
 
 Webhook on an event: draw an edge from the node to a `webhook` node. It fires when that node completes.
+
+E-mail notifications (missed call and voicemail, needs the `notifier` service, see `INSTALL.md` section "E-mailmeldingen"): see `examples/email-notifications.json`.
+
+- A `webhook` node only fires through an edge from another node. A webhook that is itself the `on_no_answer` target or a step on the route is never executed (it has no executor, the runtime moves on without firing it). Do not put it between hunt and voicemail.
+- Missed call: set the hunt's `on_no_answer` to a `play_audio` node ("nobody available"). Draw two default edges from that node: one to the `voicemail` node (or another continuation) and one to a `webhook` node. Both are followed, the webhook as a side effect. The webhook payload then has `node_type` `play_audio` and the `node_id` of that node.
+- Voicemail: draw an edge from the `voicemail` node to a second `webhook` node. It fires after the recording is saved and the call has ended, and its payload carries `recording.url` and `recording.duration_seconds`.
+- Webhook config: `method` `POST`, `timeout_ms` `30000` (default 5000 is too short for a voicemail), `headers` `[{ "key": "X-Callytics-Token", "value": "REPLACE-ME" }]` (the real value is `NOTIFIER_TOKEN` from `.env`).
+- URLs, one path per event so the notifier never guesses: `http://127.0.0.1:3005/webhooks/missed-call` and `http://127.0.0.1:3005/webhooks/voicemail`. Use another host or port only when `NOTIFIER_BIND_ADDR` or `NOTIFIER_PORT` differ.
+- Add `REPLACE-ME` for the token to the fill-in checklist you give the user.
 
 Greeting then agents: `start` to `play_audio` to `hunt` (see `examples/minimal.json`).
 

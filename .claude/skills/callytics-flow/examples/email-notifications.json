@@ -1,0 +1,66 @@
+{
+  "format": "callytics-flow",
+  "version": 1,
+  "name": "Hunt with e-mail notifications",
+  "description": "Rings one extension. On no answer a message plays, a missed call e-mail is sent and the caller goes to voicemail, which sends the recording by e-mail. Needs the notifier service (INSTALL.md, E-mailmeldingen). Replace REPLACE-ME (extension and X-Callytics-Token value) and the placeholder audio id 999999.",
+  "nodes": [
+    { "nodeKey": "start", "type": "start", "label": "Start", "config": { "flow_default_timeout_ms": 10000 }, "positionX": 0, "positionY": 0 },
+    {
+      "nodeKey": "hunt",
+      "type": "hunt",
+      "label": "Ring reception",
+      "config": {
+        "destinations": [{ "target_type": "extension", "target_value": "REPLACE-ME" }],
+        "strategy": "sequential",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000,
+        "on_no_answer": "no_answer_msg"
+      },
+      "positionX": 0,
+      "positionY": 150
+    },
+    { "nodeKey": "no_answer_msg", "type": "play_audio", "label": "Nobody available (set audio)", "config": { "audio_file_id": 999999 }, "positionX": 0, "positionY": 300 },
+    {
+      "nodeKey": "wh_missed_call",
+      "type": "webhook",
+      "label": "Mail missed call (set token)",
+      "config": {
+        "url": "http://127.0.0.1:3005/webhooks/missed-call",
+        "method": "POST",
+        "include_session_variables": false,
+        "timeout_ms": 30000,
+        "headers": [{ "key": "X-Callytics-Token", "value": "REPLACE-ME" }]
+      },
+      "positionX": 420,
+      "positionY": 300
+    },
+    {
+      "nodeKey": "voicemail",
+      "type": "voicemail",
+      "label": "Voicemail (set intro audio)",
+      "config": { "mailbox_name": "main", "max_duration_seconds": 60, "start_audio_id": 999999 },
+      "positionX": 0,
+      "positionY": 450
+    },
+    {
+      "nodeKey": "wh_voicemail",
+      "type": "webhook",
+      "label": "Mail voicemail (set token)",
+      "config": {
+        "url": "http://127.0.0.1:3005/webhooks/voicemail",
+        "method": "POST",
+        "include_session_variables": false,
+        "timeout_ms": 30000,
+        "headers": [{ "key": "X-Callytics-Token", "value": "REPLACE-ME" }]
+      },
+      "positionX": 420,
+      "positionY": 450
+    }
+  ],
+  "edges": [
+    { "sourceNodeKey": "start", "targetNodeKey": "hunt", "branchKey": "default" },
+    { "sourceNodeKey": "no_answer_msg", "targetNodeKey": "wh_missed_call", "branchKey": "default" },
+    { "sourceNodeKey": "no_answer_msg", "targetNodeKey": "voicemail", "branchKey": "default" },
+    { "sourceNodeKey": "voicemail", "targetNodeKey": "wh_voicemail", "branchKey": "default" }
+  ]
+}
