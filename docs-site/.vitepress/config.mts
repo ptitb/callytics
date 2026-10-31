@@ -95,6 +95,7 @@ export default defineConfig({
             { text: 'SIP Capture', link: '/features/sip-capture' },
             { text: 'Diagnostics', link: '/features/diagnostics' },
             { text: 'Call Recordings', link: '/features/recordings' },
+            { text: 'E-mail Notifications', link: '/features/email-notifications' },
             { text: 'Audio Management', link: '/features/audio' },
             { text: 'WireGuard VPN', link: '/features/vpn' },
             { text: 'SIP Firewall', link: '/features/firewall' },

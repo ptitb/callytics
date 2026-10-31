@@ -315,7 +315,108 @@ Voer de tests uit na de installatie en na elke grotere wijziging. Alle `asterisk
 | 18 | Uploadlimiet audio | Upload een audiobestand groter dan `UPLOAD_MAX_MB` bij een audionode | Upload wordt geweigerd (HTTP 413). Een bestand kleiner dan de limiet lukt |
 | 19 | Certificaatpad | `docker compose logs asterisk \| grep "SIP TLS"` | `SIP TLS enabled on port 5081` |
 
-## 11. Probleemoplossing
+## 11. E-mailmeldingen
+
+De dienst `notifier` stuurt een e-mail naar een algemeen adres bij:
+
+- een gemiste oproep (caller-nummer en tijd)
+- een nieuwe voicemail (nummer, tijd, duur en de opname als MP3-bijlage)
+
+De dienst draait mee met `docker compose up` en luistert op `127.0.0.1:3005`. Callytics roept hem aan via Webhook-nodes in een flow. Zonder SMTP-instellingen start hij wel, maar antwoordt hij op elk webhook met `503` en staat er een waarschuwing in `docker compose logs notifier`. Bestaande installaties blijven dus gewoon werken.
+
+### Instellen
+
+`scripts/install.sh` genereert `NOTIFIER_TOKEN`. Bij een bestaande installatie voeg je die zelf toe (`openssl rand -hex 24`). Zet de rest in `.env`:
+
+```bash
+SMTP_HOST=smtp.example.com
+SMTP_PORT=587            # 465 samen met SMTP_SECURE=true
+SMTP_SECURE=false
+SMTP_USER=callytics@example.com
+SMTP_PASS=<wachtwoord>
+NOTIFY_FROM=callytics@example.com
+NOTIFY_TO=info@example.com        # meerdere adressen kommagescheiden
+NOTIFY_LANGUAGE=nl                # nl of en
+NOTIFY_TIMEZONE=Europe/Amsterdam  # tijdzone van de tijden in de mail
+```
+
+Laat `SMTP_USER` en `SMTP_PASS` leeg voor een server zonder inlog (beide of geen van beide). Bouw en start daarna de dienst:
+
+```bash
+docker compose up -d --build notifier
+docker compose logs -f notifier
+```
+
+In de log staat `listening on 127.0.0.1:3005` en geen waarschuwing meer over ontbrekende instellingen.
+
+### Webhook-nodes in de flow
+
+Een Webhook-node wordt alleen afgevuurd via een verbinding vanaf een andere node. Een Webhook-node die zelf als stap in de route staat (bijvoorbeeld `on_no_answer` van een hunt wijst naar een Webhook-node) wordt niet uitgevoerd. Het runtime kent geen executor voor dat type en gaat gewoon door. Daarom loopt de gemiste oproep via een tussenstap:
+
+1. Hunt: zet `on_no_answer` op een **Play audio**-node (bijvoorbeeld "Er is nu niemand beschikbaar").
+2. Teken vanaf die Play audio-node twee verbindingen: een naar de **Voicemail**-node en een naar een **Webhook**-node voor de gemiste oproep.
+3. Teken vanaf de Voicemail-node een verbinding naar een tweede **Webhook**-node voor de voicemail. Die wordt afgevuurd nadat de opname klaar is en het gesprek is beëindigd.
+
+Instellingen van beide Webhook-nodes:
+
+| Veld | Gemiste oproep | Voicemail |
+|---|---|---|
+| URL | `http://127.0.0.1:3005/webhooks/missed-call` | `http://127.0.0.1:3005/webhooks/voicemail` |
+| Method | `POST` | `POST` |
+| Header | `X-Callytics-Token` = waarde van `NOTIFIER_TOKEN` | idem |
+| Timeout | 30000 ms | 30000 ms |
+
+Zet de timeout op 30000 ms. De standaard is 5000 ms, en het downloaden en omzetten van een voicemail kan langer duren. De dienst herkent een herhaald verzoek (zelfde nummer, starttijd, node en opname binnen 10 minuten) en stuurt dan geen tweede mail.
+
+Een voorbeeldflow staat in `.claude/skills/callytics-flow/examples/email-notifications.json` (importeren via Configure > Templates > Import JSON).
+
+Callytics herhaalt een webhook bij een `5xx` of time-out, niet bij een `4xx`. De dienst antwoordt pas `200` nadat de SMTP-server de mail heeft geaccepteerd.
+
+### Beveiliging
+
+- De dienst luistert standaard alleen op `127.0.0.1`. Verander `NOTIFIER_BIND_ADDR` alleen als Callytics op een andere machine draait, en open poort 3005 dan alleen voor dat adres in ufw.
+- Zonder geldige `X-Callytics-Token` antwoordt de dienst `401`.
+- Opnames worden alleen gedownload van `BACKEND_URL` (standaard `http://127.0.0.1:3001`), in de vorm `/recordings/<id>/download`. Elke andere host of vorm wordt geweigerd met `400`.
+- Het SMTP-wachtwoord komt nooit in de log.
+
+### Testen
+
+Vervang `<token>` door de waarde van `NOTIFIER_TOKEN`.
+
+```bash
+# Gezondheid (geen token nodig). "ready": true betekent dat SMTP en token zijn ingesteld.
+curl -s http://127.0.0.1:3005/health
+
+# Gemiste oproep
+curl -s -X POST http://127.0.0.1:3005/webhooks/missed-call \
+  -H 'Content-Type: application/json' \
+  -H 'X-Callytics-Token: <token>' \
+  -d '{"caller_number":"31612345678","flow_id":1,"node_type":"play_audio","node_id":"no_answer_msg","call_started_at":"2026-11-03T09:01:05.000Z","timestamp":"2026-11-03T09:01:20.000Z"}'
+
+# Voicemail (recording.url moet naar een bestaande opname in de backend wijzen, zie /recordings in de UI)
+curl -s -X POST http://127.0.0.1:3005/webhooks/voicemail \
+  -H 'Content-Type: application/json' \
+  -H 'X-Callytics-Token: <token>' \
+  -d '{"caller_number":"31612345678","flow_id":1,"node_type":"voicemail","node_id":"voicemail","call_started_at":"2026-11-03T09:02:05.000Z","timestamp":"2026-11-03T09:03:00.000Z","recording":{"url":"http://127.0.0.1:3001/recordings/1/download","duration_seconds":18}}'
+```
+
+Verwacht `{"status":"sent"}` en een mail. Dezelfde aanroep binnen 10 minuten geeft `{"status":"duplicate"}` zonder tweede mail. Wijzig `call_started_at` om opnieuw te testen.
+
+### Probleemoplossing
+
+| Melding of gedrag | Oorzaak en oplossing |
+|---|---|
+| `503` met `Notifier is not configured: ...` | De genoemde variabelen ontbreken in `.env`. Zet ze en draai `docker compose up -d notifier`. |
+| `401` | `X-Callytics-Token` ontbreekt of wijkt af van `NOTIFIER_TOKEN`. Let op spaties in de header-waarde in de flow. |
+| `400` met `recording.url does not point to the configured backend` | `BACKEND_URL` in `.env` wijkt af van de URL in het webhook. Beide moeten dezelfde host en poort hebben. |
+| `502` met `The mail server did not accept the message` | De reden staat in `docker compose logs notifier` (`SMTP send failed`). Controleer host, poort, `SMTP_SECURE`, inlog en of `NOTIFY_FROM` is toegestaan voor deze server. |
+| `502` met `Recording download failed` | De backend is niet bereikbaar op `BACKEND_URL` of de opname bestaat niet meer. |
+| Mail komt aan met een `.wav`-bijlage | De omzetting naar MP3 is mislukt, de reden staat in de log (`mp3 conversion failed`). De mail zegt dit ook. |
+| Geen mail bij een gemiste oproep | Controleer dat de Webhook-node aan een Play audio-node hangt en niet direct aan de hunt. Kijk in `docker compose logs stasis` naar `[webhook] fired`. |
+| Poort 3005 is bezet | Zet `NOTIFIER_PORT` in `.env` en pas de URL in de Webhook-nodes aan. |
+| Mail in de spam | Gebruik een `NOTIFY_FROM` op een domein waarvoor de SMTP-server SPF en DKIM afhandelt. |
+
+## 12. Probleemoplossing
 
 Logs:
 
