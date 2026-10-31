@@ -1,0 +1,29 @@
+{
+  "name": "@callytics/notifier",
+  "version": "0.1.0",
+  "description": "Callytics e-mail notifier: turns flow webhooks into missed call and voicemail e-mails",
+  "private": true,
+  "license": "MIT",
+  "main": "dist/index.js",
+  "scripts": {
+    "test": "jest",
+    "test:fast": "jest --passWithNoTests",
+    "test:unit": "jest",
+    "test:ci": "jest --ci --coverage",
+    "test:full": "jest --ci --coverage --detectOpenHandles",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "build": "tsc -p tsconfig.build.json",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "nodemailer": "^7.0.0"
+  },
+  "devDependencies": {
+    "@types/jest": "^30.0.0",
+    "@types/node": "^22.5.4",
+    "@types/nodemailer": "^7.0.0",
+    "jest": "^30.3.0",
+    "ts-jest": "^29.4.9",
+    "typescript": "^5.5.4"
+  }
+}

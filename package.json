@@ -7,14 +7,15 @@
   "workspaces": [
     "backend",
     "frontend",
-    "stasis"
+    "stasis",
+    "notifier"
   ],
   "scripts": {
     "test": "npm run test:ci",
-    "test:fast": "npm run test:fast --workspace stasis && npm run test:fast --workspace backend",
-    "test:ci": "npm run test:ci --workspace stasis && npm run test:ci --workspace backend && npm run test:ci --workspace frontend",
-    "test:full": "npm run test:full --workspace stasis && npm run test:full --workspace backend && npm run test:full --workspace frontend",
-    "test:unit": "npm run test --workspace stasis && npm run test:unit --workspace backend",
+    "test:fast": "npm run test:fast --workspace stasis && npm run test:fast --workspace notifier && npm run test:fast --workspace backend",
+    "test:ci": "npm run test:ci --workspace stasis && npm run test:ci --workspace notifier && npm run test:ci --workspace backend && npm run test:ci --workspace frontend",
+    "test:full": "npm run test:full --workspace stasis && npm run test:full --workspace notifier && npm run test:full --workspace backend && npm run test:full --workspace frontend",
+    "test:unit": "npm run test --workspace stasis && npm run test --workspace notifier && npm run test:unit --workspace backend",
     "test:int": "npm run test:int --workspace backend",
     "dev": "docker compose up -d",
     "dev:build": "docker compose up -d --build",
