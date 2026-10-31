@@ -155,6 +155,11 @@ export default async function migrate(): Promise<void> {
     ADD COLUMN IF NOT EXISTS call_log_id INTEGER
   `).catch(() => undefined);
   await pool.query(`
+    ALTER TABLE call_recordings
+    ADD COLUMN IF NOT EXISTS remote_number TEXT,
+    ADD COLUMN IF NOT EXISTS operator_label TEXT
+  `).catch(() => undefined);
+  await pool.query(`
     ALTER TABLE call_flows
     ADD COLUMN IF NOT EXISTS is_template BOOLEAN NOT NULL DEFAULT false,
     ADD COLUMN IF NOT EXISTS template_description TEXT,

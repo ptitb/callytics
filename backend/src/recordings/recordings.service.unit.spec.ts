@@ -30,6 +30,7 @@ describe('RecordingsService', () => {
   };
 
   beforeEach(async () => {
+    mockDataSource.query.mockResolvedValue([]);
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RecordingsService,
@@ -62,6 +63,35 @@ describe('RecordingsService', () => {
 
       expect(result.data).toHaveLength(1);
       expect(result.total).toBe(1);
+    });
+
+    it('should use stored remote number and operator label without querying call logs', async () => {
+      const items = [{ id: 1, callId: 'call-1', remoteNumber: '+31612345678', operatorLabel: '101', startedAt: new Date(), createdAt: new Date() }];
+      recordingsRepo.findAndCount.mockResolvedValue([items, 1]);
+      mockFlowsRepo.find.mockResolvedValue([]);
+
+      const result = await service.list(1, 10);
+
+      expect(result.data[0].remoteNumber).toBe('+31612345678');
+      expect(result.data[0].operatorLabel).toBe('101');
+      expect(mockDataSource.query).not.toHaveBeenCalled();
+    });
+
+    it('should fall back to call log caller number when remote number is missing', async () => {
+      const items = [
+        { id: 1, callId: 'call-1', remoteNumber: null, operatorLabel: null, startedAt: new Date(), createdAt: new Date() },
+        { id: 2, callId: 'call-2', remoteNumber: null, operatorLabel: null, startedAt: new Date(), createdAt: new Date() },
+      ];
+      recordingsRepo.findAndCount.mockResolvedValue([items, 2]);
+      mockFlowsRepo.find.mockResolvedValue([]);
+      mockDataSource.query.mockResolvedValue([{ call_uuid: 'call-1', caller_number: '0201234567' }]);
+
+      const result = await service.list(1, 10);
+
+      expect(mockDataSource.query).toHaveBeenCalledTimes(1);
+      expect(result.data[0].remoteNumber).toBe('0201234567');
+      expect(result.data[1].remoteNumber).toBeNull();
+      expect(result.data[0].operatorLabel).toBeNull();
     });
   });
 
@@ -101,6 +131,32 @@ describe('RecordingsService', () => {
       const result = await service.createInternal(dto);
 
       expect(result.data.id).toBe(1);
+    });
+
+    it('should store remote number and operator label', async () => {
+      const dto = {
+        callId: 'call-1',
+        channelId: 'chan-1',
+        fileName: 'test.wav',
+        filePath: '/tmp/test.wav',
+        format: 'wav',
+        startedAt: new Date().toISOString(),
+        remoteNumber: '+31612345678',
+        operatorLabel: '101',
+      };
+      const entity = { ...dto, id: 1, startedAt: new Date(), createdAt: new Date() };
+      recordingsRepo.create.mockReturnValue(entity);
+      recordingsRepo.save.mockResolvedValue(entity);
+      recordingsRepo.findOne.mockResolvedValue(entity);
+      mockFlowsRepo.find.mockResolvedValue([]);
+
+      const result = await service.createInternal(dto);
+
+      expect(recordingsRepo.create).toHaveBeenCalledWith(
+        expect.objectContaining({ remoteNumber: '+31612345678', operatorLabel: '101' }),
+      );
+      expect(result.data.remoteNumber).toBe('+31612345678');
+      expect(result.data.operatorLabel).toBe('101');
     });
 
     it('should throw BadRequestException for invalid filename', async () => {

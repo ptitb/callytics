@@ -26,6 +26,12 @@ export class CallRecordingEntity {
   @Column({ name: 'recording_type', type: 'text', default: 'inbound' })
   recordingType!: string;
 
+  @Column({ name: 'remote_number', type: 'text', nullable: true })
+  remoteNumber!: string | null;
+
+  @Column({ name: 'operator_label', type: 'text', nullable: true })
+  operatorLabel!: string | null;
+
   @Column({ name: 'duration_seconds', type: 'integer', nullable: true })
   durationSeconds!: number | null;
 

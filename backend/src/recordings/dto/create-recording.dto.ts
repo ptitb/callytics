@@ -1,4 +1,4 @@
-import { IsDateString, IsInt, IsOptional, IsString, Min } from 'class-validator';
+import { IsDateString, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
 export class CreateRecordingDto {
   @IsString()
@@ -27,6 +27,16 @@ export class CreateRecordingDto {
 
   @IsDateString()
   startedAt!: string;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  remoteNumber?: string | null;
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(255)
+  operatorLabel?: string | null;
 
   @IsOptional()
   @IsDateString()

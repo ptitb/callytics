@@ -13,6 +13,8 @@ export interface RecordingResponse {
   channelId: string;
   flowId: number | null;
   flowName: string | null;
+  remoteNumber: string | null;
+  operatorLabel: string | null;
   fileName: string;
   filePath: string;
   format: string;
@@ -48,8 +50,9 @@ export class RecordingsService implements OnModuleInit {
     });
 
     const flowNames = await this.loadFlowNames(items);
+    const fallbackNumbers = await this.loadFallbackRemoteNumbers(items);
     return {
-      data: items.map((item) => this.toResponse(item, flowNames)),
+      data: items.map((item) => this.toResponse(item, flowNames, fallbackNumbers)),
       total,
       page: safePage,
       limit: safeLimit,
@@ -61,7 +64,8 @@ export class RecordingsService implements OnModuleInit {
     const item = await this.recordingsRepository.findOne({ where: { id } });
     if (!item) throw new NotFoundException(`Recording ${id} not found`);
     const flowNames = await this.loadFlowNames([item]);
-    return { data: this.toResponse(item, flowNames) };
+    const fallbackNumbers = await this.loadFallbackRemoteNumbers([item]);
+    return { data: this.toResponse(item, flowNames, fallbackNumbers) };
   }
 
   async createInternal(dto: CreateRecordingDto): Promise<{ data: RecordingResponse }> {
@@ -78,6 +82,8 @@ export class RecordingsService implements OnModuleInit {
       filePath: join('/var/lib/asterisk/recording', normalizedFileName),
       format: dto.format || 'wav',
       recordingType: 'inbound',
+      remoteNumber: dto.remoteNumber ?? null,
+      operatorLabel: dto.operatorLabel ?? null,
       durationSeconds: dto.durationSeconds ?? null,
       startedAt: new Date(dto.startedAt),
       endedAt: dto.endedAt ? new Date(dto.endedAt) : null,
@@ -86,7 +92,8 @@ export class RecordingsService implements OnModuleInit {
     const refreshed = await this.recordingsRepository.findOne({ where: { id: saved.id } });
     if (!refreshed) throw new NotFoundException(`Recording ${saved.id} not found after save`);
     const flowNames = await this.loadFlowNames([refreshed]);
-    return { data: this.toResponse(refreshed, flowNames) };
+    const fallbackNumbers = await this.loadFallbackRemoteNumbers([refreshed]);
+    return { data: this.toResponse(refreshed, flowNames, fallbackNumbers) };
   }
 
   async getFilePath(id: number): Promise<string> {
@@ -136,13 +143,35 @@ export class RecordingsService implements OnModuleInit {
     return new Map(flows.map((flow) => [flow.id, flow.name]));
   }
 
-  private toResponse(item: CallRecordingEntity, flowNames: Map<number, string>): RecordingResponse {
+  /** Older recordings have no remote_number; use the caller number from the matching call log instead. */
+  private async loadFallbackRemoteNumbers(items: CallRecordingEntity[]): Promise<Map<string, string>> {
+    const callIds = Array.from(new Set(items.filter((item) => !item.remoteNumber).map((item) => item.callId)));
+    if (callIds.length === 0) {
+      return new Map();
+    }
+
+    const rows: Array<{ call_uuid: string; caller_number: string | null }> = await this.dataSource.query(
+      `SELECT call_uuid, caller_number
+       FROM call_logs
+       WHERE call_uuid = ANY($1) AND caller_number IS NOT NULL`,
+      [callIds],
+    );
+    return new Map(rows.map((row) => [row.call_uuid, row.caller_number as string]));
+  }
+
+  private toResponse(
+    item: CallRecordingEntity,
+    flowNames: Map<number, string>,
+    fallbackNumbers: Map<string, string>,
+  ): RecordingResponse {
     return {
       id: item.id,
       callId: item.callId,
       channelId: item.channelId,
       flowId: item.flowId,
       flowName: item.flowId ? flowNames.get(item.flowId) || null : null,
+      remoteNumber: item.remoteNumber || fallbackNumbers.get(item.callId) || null,
+      operatorLabel: item.operatorLabel || null,
       fileName: item.fileName,
       filePath: item.filePath,
       format: item.format,
@@ -186,7 +215,9 @@ export class RecordingsService implements OnModuleInit {
     await this.dataSource.query(`
       ALTER TABLE call_recordings
       ADD COLUMN IF NOT EXISTS recording_type TEXT NOT NULL DEFAULT 'inbound',
-      ADD COLUMN IF NOT EXISTS call_log_id INTEGER
+      ADD COLUMN IF NOT EXISTS call_log_id INTEGER,
+      ADD COLUMN IF NOT EXISTS remote_number TEXT,
+      ADD COLUMN IF NOT EXISTS operator_label TEXT
     `);
   }
 }
