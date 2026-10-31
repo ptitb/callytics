@@ -26,6 +26,12 @@ export interface RecordingResponse {
   streamUrl: string;
 }
 
+interface CallLogFallback {
+  direction: string | null;
+  remoteNumber: string | null;
+  operatorLabel: string | null;
+}
+
 @Injectable()
 export class RecordingsService implements OnModuleInit {
   constructor(
@@ -50,9 +56,9 @@ export class RecordingsService implements OnModuleInit {
     });
 
     const flowNames = await this.loadFlowNames(items);
-    const fallbackNumbers = await this.loadFallbackRemoteNumbers(items);
+    const fallbacks = await this.loadCallLogFallbacks(items);
     return {
-      data: items.map((item) => this.toResponse(item, flowNames, fallbackNumbers)),
+      data: items.map((item) => this.toResponse(item, flowNames, fallbacks)),
       total,
       page: safePage,
       limit: safeLimit,
@@ -64,8 +70,8 @@ export class RecordingsService implements OnModuleInit {
     const item = await this.recordingsRepository.findOne({ where: { id } });
     if (!item) throw new NotFoundException(`Recording ${id} not found`);
     const flowNames = await this.loadFlowNames([item]);
-    const fallbackNumbers = await this.loadFallbackRemoteNumbers([item]);
-    return { data: this.toResponse(item, flowNames, fallbackNumbers) };
+    const fallbacks = await this.loadCallLogFallbacks([item]);
+    return { data: this.toResponse(item, flowNames, fallbacks) };
   }
 
   async createInternal(dto: CreateRecordingDto): Promise<{ data: RecordingResponse }> {
@@ -81,7 +87,7 @@ export class RecordingsService implements OnModuleInit {
       fileName: normalizedFileName,
       filePath: join('/var/lib/asterisk/recording', normalizedFileName),
       format: dto.format || 'wav',
-      recordingType: 'inbound',
+      recordingType: dto.recordingType ?? 'inbound',
       remoteNumber: dto.remoteNumber ?? null,
       operatorLabel: dto.operatorLabel ?? null,
       durationSeconds: dto.durationSeconds ?? null,
@@ -92,8 +98,8 @@ export class RecordingsService implements OnModuleInit {
     const refreshed = await this.recordingsRepository.findOne({ where: { id: saved.id } });
     if (!refreshed) throw new NotFoundException(`Recording ${saved.id} not found after save`);
     const flowNames = await this.loadFlowNames([refreshed]);
-    const fallbackNumbers = await this.loadFallbackRemoteNumbers([refreshed]);
-    return { data: this.toResponse(refreshed, flowNames, fallbackNumbers) };
+    const fallbacks = await this.loadCallLogFallbacks([refreshed]);
+    return { data: this.toResponse(refreshed, flowNames, fallbacks) };
   }
 
   async getFilePath(id: number): Promise<string> {
@@ -143,39 +149,64 @@ export class RecordingsService implements OnModuleInit {
     return new Map(flows.map((flow) => [flow.id, flow.name]));
   }
 
-  /** Older recordings have no remote_number; use the caller number from the matching call log instead. */
-  private async loadFallbackRemoteNumbers(items: CallRecordingEntity[]): Promise<Map<string, string>> {
-    const callIds = Array.from(new Set(items.filter((item) => !item.remoteNumber).map((item) => item.callId)));
+  /**
+   * Recordings without a stored remote number or operator use the matching call log.
+   * Outbound: the remote party is the callee and the operator is the calling extension.
+   * Otherwise: the remote party is the caller and there is no operator.
+   */
+  private async loadCallLogFallbacks(items: CallRecordingEntity[]): Promise<Map<string, CallLogFallback>> {
+    const callIds = Array.from(
+      new Set(items.filter((item) => !item.remoteNumber || !item.operatorLabel).map((item) => item.callId)),
+    );
     if (callIds.length === 0) {
       return new Map();
     }
 
-    const rows: Array<{ call_uuid: string; caller_number: string | null }> = await this.dataSource.query(
-      `SELECT call_uuid, caller_number
+    const rows: Array<{
+      call_uuid: string;
+      direction: string | null;
+      caller_number: string | null;
+      callee_number: string | null;
+    }> = await this.dataSource.query(
+      `SELECT call_uuid, direction, caller_number, callee_number
        FROM call_logs
-       WHERE call_uuid = ANY($1) AND caller_number IS NOT NULL`,
+       WHERE call_uuid = ANY($1)`,
       [callIds],
     );
-    return new Map(rows.map((row) => [row.call_uuid, row.caller_number as string]));
+    return new Map(
+      rows.map((row) => {
+        const isOutbound = row.direction === 'outbound';
+        return [
+          row.call_uuid,
+          {
+            direction: row.direction,
+            remoteNumber: (isOutbound ? row.callee_number : row.caller_number) || null,
+            operatorLabel: isOutbound ? row.caller_number || null : null,
+          },
+        ];
+      }),
+    );
   }
 
   private toResponse(
     item: CallRecordingEntity,
     flowNames: Map<number, string>,
-    fallbackNumbers: Map<string, string>,
+    fallbacks: Map<string, CallLogFallback>,
   ): RecordingResponse {
+    const fallback = fallbacks.get(item.callId);
+    const storedType = item.recordingType || 'inbound';
     return {
       id: item.id,
       callId: item.callId,
       channelId: item.channelId,
       flowId: item.flowId,
       flowName: item.flowId ? flowNames.get(item.flowId) || null : null,
-      remoteNumber: item.remoteNumber || fallbackNumbers.get(item.callId) || null,
-      operatorLabel: item.operatorLabel || null,
+      remoteNumber: item.remoteNumber || fallback?.remoteNumber || null,
+      operatorLabel: item.operatorLabel || fallback?.operatorLabel || null,
       fileName: item.fileName,
       filePath: item.filePath,
       format: item.format,
-      recordingType: item.recordingType || 'inbound',
+      recordingType: storedType === 'inbound' && fallback?.direction === 'outbound' ? 'outbound' : storedType,
       durationSeconds: item.durationSeconds,
       startedAt: item.startedAt.toISOString(),
       endedAt: item.endedAt ? item.endedAt.toISOString() : null,

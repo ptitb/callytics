@@ -519,6 +519,7 @@ async function persistDirectOutboundRecording(call: DirectOutboundActiveCall): P
       callId: call.callId,
       channelId: call.inboundChannelId,
       flowId: null,
+      recordingType: "outbound",
       remoteNumber: call.destination,
       operatorLabel: call.callerId || null,
       fileName: call.recording.fileName,

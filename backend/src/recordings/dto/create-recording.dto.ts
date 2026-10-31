@@ -1,4 +1,7 @@
-import { IsDateString, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+import { IsDateString, IsIn, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
+
+export const RECORDING_TYPES = ['inbound', 'outbound', 'voicemail'] as const;
+export type RecordingType = (typeof RECORDING_TYPES)[number];
 
 export class CreateRecordingDto {
   @IsString()
@@ -37,6 +40,10 @@ export class CreateRecordingDto {
   @IsString()
   @MaxLength(255)
   operatorLabel?: string | null;
+
+  @IsOptional()
+  @IsIn(RECORDING_TYPES)
+  recordingType?: RecordingType;
 
   @IsOptional()
   @IsDateString()

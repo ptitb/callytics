@@ -77,21 +77,58 @@ describe('RecordingsService', () => {
       expect(mockDataSource.query).not.toHaveBeenCalled();
     });
 
-    it('should fall back to call log caller number when remote number is missing', async () => {
+    it('should fall back to call log caller number for inbound calls', async () => {
       const items = [
         { id: 1, callId: 'call-1', remoteNumber: null, operatorLabel: null, startedAt: new Date(), createdAt: new Date() },
         { id: 2, callId: 'call-2', remoteNumber: null, operatorLabel: null, startedAt: new Date(), createdAt: new Date() },
       ];
       recordingsRepo.findAndCount.mockResolvedValue([items, 2]);
       mockFlowsRepo.find.mockResolvedValue([]);
-      mockDataSource.query.mockResolvedValue([{ call_uuid: 'call-1', caller_number: '0201234567' }]);
+      mockDataSource.query.mockResolvedValue([
+        { call_uuid: 'call-1', direction: 'inbound', caller_number: '0201234567', callee_number: '0301112222' },
+      ]);
 
       const result = await service.list(1, 10);
 
       expect(mockDataSource.query).toHaveBeenCalledTimes(1);
       expect(result.data[0].remoteNumber).toBe('0201234567');
-      expect(result.data[1].remoteNumber).toBeNull();
       expect(result.data[0].operatorLabel).toBeNull();
+      expect(result.data[0].recordingType).toBe('inbound');
+      expect(result.data[1].remoteNumber).toBeNull();
+    });
+
+    it('should use callee as number and caller as operator for outbound calls', async () => {
+      const items = [
+        { id: 1, callId: 'call-1', remoteNumber: null, operatorLabel: null, recordingType: 'inbound', startedAt: new Date(), createdAt: new Date() },
+      ];
+      recordingsRepo.findAndCount.mockResolvedValue([items, 1]);
+      mockFlowsRepo.find.mockResolvedValue([]);
+      mockDataSource.query.mockResolvedValue([
+        { call_uuid: 'call-1', direction: 'outbound', caller_number: '101', callee_number: '+31612345678' },
+      ]);
+
+      const result = await service.list(1, 10);
+
+      expect(result.data[0].remoteNumber).toBe('+31612345678');
+      expect(result.data[0].operatorLabel).toBe('101');
+      expect(result.data[0].recordingType).toBe('outbound');
+    });
+
+    it('should prefer stored values over call log fallbacks', async () => {
+      const items = [
+        { id: 1, callId: 'call-1', remoteNumber: '+31600000000', operatorLabel: null, recordingType: 'voicemail', startedAt: new Date(), createdAt: new Date() },
+      ];
+      recordingsRepo.findAndCount.mockResolvedValue([items, 1]);
+      mockFlowsRepo.find.mockResolvedValue([]);
+      mockDataSource.query.mockResolvedValue([
+        { call_uuid: 'call-1', direction: 'outbound', caller_number: '101', callee_number: '+31612345678' },
+      ]);
+
+      const result = await service.list(1, 10);
+
+      expect(result.data[0].remoteNumber).toBe('+31600000000');
+      expect(result.data[0].operatorLabel).toBe('101');
+      expect(result.data[0].recordingType).toBe('voicemail');
     });
   });
 
@@ -157,6 +194,28 @@ describe('RecordingsService', () => {
       );
       expect(result.data.remoteNumber).toBe('+31612345678');
       expect(result.data.operatorLabel).toBe('101');
+    });
+
+    it('should default recording type to inbound and accept outbound', async () => {
+      const dto = {
+        callId: 'call-1',
+        channelId: 'chan-1',
+        fileName: 'test.wav',
+        filePath: '/tmp/test.wav',
+        format: 'wav',
+        startedAt: new Date().toISOString(),
+      };
+      const entity = { ...dto, id: 1, startedAt: new Date(), createdAt: new Date() };
+      recordingsRepo.create.mockReturnValue(entity);
+      recordingsRepo.save.mockResolvedValue(entity);
+      recordingsRepo.findOne.mockResolvedValue(entity);
+      mockFlowsRepo.find.mockResolvedValue([]);
+
+      await service.createInternal(dto);
+      expect(recordingsRepo.create).toHaveBeenLastCalledWith(expect.objectContaining({ recordingType: 'inbound' }));
+
+      await service.createInternal({ ...dto, recordingType: 'outbound' });
+      expect(recordingsRepo.create).toHaveBeenLastCalledWith(expect.objectContaining({ recordingType: 'outbound' }));
     });
 
     it('should throw BadRequestException for invalid filename', async () => {
