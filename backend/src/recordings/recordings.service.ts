@@ -5,6 +5,7 @@ import { basename, join } from 'path';
 import { DataSource, In, Repository } from 'typeorm';
 import { CallFlowEntity } from '../flows/entities/call-flow.entity';
 import { CreateRecordingDto } from './dto/create-recording.dto';
+import { ListRecordingsQueryDto, RecordingSortField } from './dto/list-recordings-query.dto';
 import { CallRecordingEntity } from './entities/call-recording.entity';
 
 export interface RecordingResponse {
@@ -32,6 +33,60 @@ interface CallLogFallback {
   operatorLabel: string | null;
 }
 
+/** Raw call_recordings row plus the effective values (stored value, else call log fallback). */
+interface EffectiveRecordingRow {
+  id: number;
+  call_id: string;
+  channel_id: string;
+  flow_id: number | null;
+  file_name: string;
+  file_path: string;
+  format: string;
+  duration_seconds: number | null;
+  started_at: Date | string;
+  ended_at: Date | string | null;
+  created_at: Date | string;
+  source: string;
+  number: string | null;
+  operator: string | null;
+}
+
+/**
+ * Effective source, number and operator, kept equivalent to loadCallLogFallbacks and toResponse:
+ * - source: stored type, but an 'inbound' recording of an outbound call is 'outbound'.
+ * - number: stored value, else callee (outbound) or caller (otherwise) of the call log.
+ * - operator: stored value, else the calling extension of an outbound call log.
+ */
+const EFFECTIVE_RECORDINGS_SQL = `
+  SELECT
+    r.id, r.call_id, r.channel_id, r.flow_id, r.file_name, r.file_path, r.format,
+    r.duration_seconds, r.started_at, r.ended_at, r.created_at,
+    CASE
+      WHEN COALESCE(NULLIF(r.recording_type, ''), 'inbound') = 'inbound' AND cl.direction = 'outbound' THEN 'outbound'
+      ELSE COALESCE(NULLIF(r.recording_type, ''), 'inbound')
+    END AS source,
+    COALESCE(
+      NULLIF(r.remote_number, ''),
+      NULLIF(CASE WHEN cl.direction = 'outbound' THEN cl.callee_number ELSE cl.caller_number END, '')
+    ) AS number,
+    COALESCE(
+      NULLIF(r.operator_label, ''),
+      CASE WHEN cl.direction = 'outbound' THEN NULLIF(cl.caller_number, '') END
+    ) AS operator
+  FROM call_recordings r
+  LEFT JOIN call_logs cl ON cl.call_uuid = r.call_id
+`;
+
+/** Whitelist mapping of the public sort parameter to columns of the effective recordings query. */
+const RECORDING_SORT_COLUMNS: Record<RecordingSortField, string> = {
+  filename: 'file_name',
+  source: 'source',
+  number: 'number',
+  operator: 'operator',
+  duration: 'duration_seconds',
+  date: 'created_at',
+};
+
 @Injectable()
 export class RecordingsService implements OnModuleInit {
   constructor(
@@ -46,19 +101,26 @@ export class RecordingsService implements OnModuleInit {
     await this.ensureSchema();
   }
 
-  async list(page = 1, limit = 20): Promise<{ data: RecordingResponse[]; total: number; page: number; limit: number; totalPages: number }> {
-    const safePage = Math.max(1, page);
-    const safeLimit = Math.max(1, limit);
-    const [items, total] = await this.recordingsRepository.findAndCount({
-      order: { createdAt: 'DESC' },
-      skip: (safePage - 1) * safeLimit,
-      take: safeLimit,
-    });
+  async list(query: ListRecordingsQueryDto = {}): Promise<{ data: RecordingResponse[]; total: number; page: number; limit: number; totalPages: number }> {
+    const safePage = Math.max(1, query.page ?? 1);
+    const safeLimit = Math.max(1, query.limit ?? 20);
+    const { whereSql, params } = this.buildListFilter(query);
+    const orderSql = this.buildListOrder(query.sort, query.order);
 
-    const flowNames = await this.loadFlowNames(items);
-    const fallbacks = await this.loadCallLogFallbacks(items);
+    const countRows: Array<{ total: string }> = await this.dataSource.query(
+      `SELECT COUNT(*) AS total FROM (${EFFECTIVE_RECORDINGS_SQL}) rec ${whereSql}`,
+      params,
+    );
+    const total = Number(countRows[0]?.total ?? 0);
+
+    const rows: EffectiveRecordingRow[] = await this.dataSource.query(
+      `SELECT * FROM (${EFFECTIVE_RECORDINGS_SQL}) rec ${whereSql} ${orderSql} LIMIT $${params.length + 1} OFFSET $${params.length + 2}`,
+      [...params, safeLimit, (safePage - 1) * safeLimit],
+    );
+
+    const flowNames = await this.loadFlowNames(rows.map((row) => ({ flowId: row.flow_id })));
     return {
-      data: items.map((item) => this.toResponse(item, flowNames, fallbacks)),
+      data: rows.map((row) => this.rowToResponse(row, flowNames)),
       total,
       page: safePage,
       limit: safeLimit,
@@ -139,7 +201,7 @@ export class RecordingsService implements OnModuleInit {
     return { data: { id, deleted: true } };
   }
 
-  private async loadFlowNames(items: CallRecordingEntity[]): Promise<Map<number, string>> {
+  private async loadFlowNames(items: Array<{ flowId: number | null }>): Promise<Map<number, string>> {
     const flowIds = Array.from(new Set(items.map((item) => item.flowId).filter((value): value is number => typeof value === 'number')));
     if (flowIds.length === 0) {
       return new Map();
@@ -186,6 +248,60 @@ export class RecordingsService implements OnModuleInit {
         ];
       }),
     );
+  }
+
+  private buildListFilter(query: ListRecordingsQueryDto): { whereSql: string; params: unknown[] } {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+
+    const search = query.search?.trim();
+    if (search) {
+      params.push(`%${search.replace(/[\\%_]/g, '\\$&')}%`);
+      const placeholder = `$${params.length}`;
+      conditions.push(
+        `(rec.number ILIKE ${placeholder} ESCAPE '\\' OR rec.operator ILIKE ${placeholder} ESCAPE '\\' OR rec.file_name ILIKE ${placeholder} ESCAPE '\\')`,
+      );
+    }
+    if (query.source) {
+      params.push(query.source);
+      conditions.push(`rec.source = $${params.length}`);
+    }
+    if (query.dateFrom) {
+      params.push(query.dateFrom);
+      conditions.push(`rec.created_at >= $${params.length}::timestamptz`);
+    }
+    if (query.dateTo) {
+      params.push(query.dateTo);
+      conditions.push(`rec.created_at <= $${params.length}::timestamptz`);
+    }
+    return { whereSql: conditions.length > 0 ? `WHERE ${conditions.join(' AND ')}` : '', params };
+  }
+
+  private buildListOrder(sort: RecordingSortField = 'date', order: 'asc' | 'desc' = 'desc'): string {
+    const column = RECORDING_SORT_COLUMNS[sort] ?? RECORDING_SORT_COLUMNS.date;
+    const direction = order === 'asc' ? 'ASC' : 'DESC';
+    return `ORDER BY rec.${column} ${direction} NULLS LAST, rec.id DESC`;
+  }
+
+  private rowToResponse(row: EffectiveRecordingRow, flowNames: Map<number, string>): RecordingResponse {
+    return {
+      id: row.id,
+      callId: row.call_id,
+      channelId: row.channel_id,
+      flowId: row.flow_id,
+      flowName: row.flow_id ? flowNames.get(row.flow_id) || null : null,
+      remoteNumber: row.number,
+      operatorLabel: row.operator,
+      fileName: row.file_name,
+      filePath: row.file_path,
+      format: row.format,
+      recordingType: row.source,
+      durationSeconds: row.duration_seconds,
+      startedAt: new Date(row.started_at).toISOString(),
+      endedAt: row.ended_at ? new Date(row.ended_at).toISOString() : null,
+      createdAt: new Date(row.created_at).toISOString(),
+      streamUrl: `/recordings/${row.id}/stream`,
+    };
   }
 
   private toResponse(

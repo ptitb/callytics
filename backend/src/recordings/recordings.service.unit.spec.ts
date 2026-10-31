@@ -5,6 +5,9 @@ import { RecordingsService } from './recordings.service';
 import { CallRecordingEntity } from './entities/call-recording.entity';
 import { CallFlowEntity } from '../flows/entities/call-flow.entity';
 import { promises as fs } from 'fs';
+import { plainToInstance } from 'class-transformer';
+import { validate } from 'class-validator';
+import { ListRecordingsQueryDto } from './dto/list-recordings-query.dto';
 
 describe('RecordingsService', () => {
   let service: RecordingsService;
@@ -54,81 +57,196 @@ describe('RecordingsService', () => {
   });
 
   describe('list', () => {
-    it('should return paginated recordings', async () => {
-      const items = [{ id: 1, callId: 'call-1', startedAt: new Date(), createdAt: new Date() }];
-      recordingsRepo.findAndCount.mockResolvedValue([items, 1]);
+    const baseRow = {
+      id: 1,
+      call_id: 'call-1',
+      channel_id: 'chan-1',
+      flow_id: null,
+      file_name: 'rec.wav',
+      file_path: '/var/lib/asterisk/recording/rec.wav',
+      format: 'wav',
+      duration_seconds: 12,
+      started_at: new Date('2026-10-31T09:41:00Z'),
+      ended_at: null,
+      created_at: new Date('2026-10-31T09:41:12Z'),
+      source: 'inbound',
+      number: '+31612345678',
+      operator: null,
+    };
+
+    const mockListQueries = (rows: any[], total = rows.length) => {
+      mockDataSource.query.mockImplementation(async (sql: string) =>
+        sql.includes('COUNT(*)') ? [{ total: String(total) }] : rows,
+      );
+    };
+    const dataQueryCall = () => mockDataSource.query.mock.calls.find(([sql]: [string]) => !sql.includes('COUNT(*)'))!;
+    const countQueryCall = () => mockDataSource.query.mock.calls.find(([sql]: [string]) => sql.includes('COUNT(*)'))!;
+
+    it('should return paginated recordings mapped from effective values', async () => {
+      mockListQueries([baseRow], 41);
       mockFlowsRepo.find.mockResolvedValue([]);
 
-      const result = await service.list(1, 10);
+      const result = await service.list({ page: 2, limit: 10 });
 
-      expect(result.data).toHaveLength(1);
-      expect(result.total).toBe(1);
+      expect(result).toMatchObject({ total: 41, page: 2, limit: 10, totalPages: 5 });
+      expect(result.data[0]).toEqual({
+        id: 1,
+        callId: 'call-1',
+        channelId: 'chan-1',
+        flowId: null,
+        flowName: null,
+        remoteNumber: '+31612345678',
+        operatorLabel: null,
+        fileName: 'rec.wav',
+        filePath: '/var/lib/asterisk/recording/rec.wav',
+        format: 'wav',
+        recordingType: 'inbound',
+        durationSeconds: 12,
+        startedAt: '2026-10-31T09:41:00.000Z',
+        endedAt: null,
+        createdAt: '2026-10-31T09:41:12.000Z',
+        streamUrl: '/recordings/1/stream',
+      });
+      const [, params] = dataQueryCall();
+      expect(params).toEqual([10, 10]);
     });
 
-    it('should use stored remote number and operator label without querying call logs', async () => {
-      const items = [{ id: 1, callId: 'call-1', remoteNumber: '+31612345678', operatorLabel: '101', startedAt: new Date(), createdAt: new Date() }];
-      recordingsRepo.findAndCount.mockResolvedValue([items, 1]);
-      mockFlowsRepo.find.mockResolvedValue([]);
+    it('should resolve flow names', async () => {
+      mockListQueries([{ ...baseRow, flow_id: 7 }]);
+      mockFlowsRepo.find.mockResolvedValue([{ id: 7, name: 'Main flow' }]);
 
-      const result = await service.list(1, 10);
+      const result = await service.list();
 
-      expect(result.data[0].remoteNumber).toBe('+31612345678');
-      expect(result.data[0].operatorLabel).toBe('101');
-      expect(mockDataSource.query).not.toHaveBeenCalled();
+      expect(result.data[0].flowName).toBe('Main flow');
     });
 
-    it('should fall back to call log caller number for inbound calls', async () => {
-      const items = [
-        { id: 1, callId: 'call-1', remoteNumber: null, operatorLabel: null, startedAt: new Date(), createdAt: new Date() },
-        { id: 2, callId: 'call-2', remoteNumber: null, operatorLabel: null, startedAt: new Date(), createdAt: new Date() },
-      ];
-      recordingsRepo.findAndCount.mockResolvedValue([items, 2]);
-      mockFlowsRepo.find.mockResolvedValue([]);
-      mockDataSource.query.mockResolvedValue([
-        { call_uuid: 'call-1', direction: 'inbound', caller_number: '0201234567', callee_number: '0301112222' },
-      ]);
+    it('should join call logs and compute the effective source, number and operator in SQL', async () => {
+      mockListQueries([]);
 
-      const result = await service.list(1, 10);
+      await service.list();
 
-      expect(mockDataSource.query).toHaveBeenCalledTimes(1);
-      expect(result.data[0].remoteNumber).toBe('0201234567');
-      expect(result.data[0].operatorLabel).toBeNull();
-      expect(result.data[0].recordingType).toBe('inbound');
-      expect(result.data[1].remoteNumber).toBeNull();
+      const [sql] = dataQueryCall();
+      expect(sql).toContain('LEFT JOIN call_logs cl ON cl.call_uuid = r.call_id');
+      expect(sql).toContain("cl.direction = 'outbound' THEN cl.callee_number ELSE cl.caller_number");
+      expect(sql).toContain("CASE WHEN cl.direction = 'outbound' THEN NULLIF(cl.caller_number, '') END");
+      expect(sql).toContain("= 'inbound' AND cl.direction = 'outbound' THEN 'outbound'");
     });
 
-    it('should use callee as number and caller as operator for outbound calls', async () => {
-      const items = [
-        { id: 1, callId: 'call-1', remoteNumber: null, operatorLabel: null, recordingType: 'inbound', startedAt: new Date(), createdAt: new Date() },
-      ];
-      recordingsRepo.findAndCount.mockResolvedValue([items, 1]);
-      mockFlowsRepo.find.mockResolvedValue([]);
-      mockDataSource.query.mockResolvedValue([
-        { call_uuid: 'call-1', direction: 'outbound', caller_number: '101', callee_number: '+31612345678' },
-      ]);
+    it('should default to date descending with nulls last and no filters', async () => {
+      mockListQueries([]);
 
-      const result = await service.list(1, 10);
+      await service.list();
 
-      expect(result.data[0].remoteNumber).toBe('+31612345678');
-      expect(result.data[0].operatorLabel).toBe('101');
-      expect(result.data[0].recordingType).toBe('outbound');
+      const [sql, params] = dataQueryCall();
+      expect(sql).toContain('ORDER BY rec.created_at DESC NULLS LAST, rec.id DESC');
+      expect(sql).not.toContain('WHERE');
+      expect(params).toEqual([20, 0]);
     });
 
-    it('should prefer stored values over call log fallbacks', async () => {
-      const items = [
-        { id: 1, callId: 'call-1', remoteNumber: '+31600000000', operatorLabel: null, recordingType: 'voicemail', startedAt: new Date(), createdAt: new Date() },
-      ];
-      recordingsRepo.findAndCount.mockResolvedValue([items, 1]);
-      mockFlowsRepo.find.mockResolvedValue([]);
-      mockDataSource.query.mockResolvedValue([
-        { call_uuid: 'call-1', direction: 'outbound', caller_number: '101', callee_number: '+31612345678' },
-      ]);
+    it.each([
+      ['filename', 'file_name'],
+      ['source', 'source'],
+      ['number', 'number'],
+      ['operator', 'operator'],
+      ['duration', 'duration_seconds'],
+      ['date', 'created_at'],
+    ] as const)('should sort by %s', async (sort, column) => {
+      mockListQueries([]);
 
-      const result = await service.list(1, 10);
+      await service.list({ sort, order: 'asc' });
 
-      expect(result.data[0].remoteNumber).toBe('+31600000000');
-      expect(result.data[0].operatorLabel).toBe('101');
-      expect(result.data[0].recordingType).toBe('voicemail');
+      expect(dataQueryCall()[0]).toContain(`ORDER BY rec.${column} ASC NULLS LAST, rec.id DESC`);
+    });
+
+    it('should ignore a sort field outside the whitelist instead of interpolating it', async () => {
+      mockListQueries([]);
+
+      await service.list({ sort: 'id; DROP TABLE call_recordings' as any, order: 'sideways' as any });
+
+      const [sql] = dataQueryCall();
+      expect(sql).toContain('ORDER BY rec.created_at DESC NULLS LAST');
+      expect(sql).not.toContain('DROP TABLE');
+    });
+
+    it('should apply all filters to both the count and the page query with bound parameters', async () => {
+      mockListQueries([]);
+
+      await service.list({
+        search: ' 3161 ',
+        source: 'outbound',
+        dateFrom: '2026-10-01T00:00:00.000Z',
+        dateTo: '2026-10-31T23:59:59.999Z',
+        page: 3,
+        limit: 5,
+      });
+
+      const [countSql, countParams] = countQueryCall();
+      const [dataSql, dataParams] = dataQueryCall();
+      for (const sql of [countSql, dataSql]) {
+        expect(sql).toContain('rec.number ILIKE $1');
+        expect(sql).toContain('rec.operator ILIKE $1');
+        expect(sql).toContain('rec.file_name ILIKE $1');
+        expect(sql).toContain('rec.source = $2');
+        expect(sql).toContain('rec.created_at >= $3::timestamptz');
+        expect(sql).toContain('rec.created_at <= $4::timestamptz');
+      }
+      expect(countParams).toEqual(['%3161%', 'outbound', '2026-10-01T00:00:00.000Z', '2026-10-31T23:59:59.999Z']);
+      expect(dataParams).toEqual(['%3161%', 'outbound', '2026-10-01T00:00:00.000Z', '2026-10-31T23:59:59.999Z', 5, 10]);
+    });
+
+    it('should escape LIKE wildcards in the search text', async () => {
+      mockListQueries([]);
+
+      await service.list({ search: '50%_a\\b' });
+
+      expect(dataQueryCall()[1][0]).toBe('%50\\%\\_a\\\\b%');
+    });
+
+    it('should ignore a blank search', async () => {
+      mockListQueries([]);
+
+      await service.list({ search: '   ' });
+
+      expect(dataQueryCall()[0]).not.toContain('ILIKE');
+    });
+
+    it('should return totalPages of at least 1 when nothing matches', async () => {
+      mockListQueries([], 0);
+
+      const result = await service.list({ search: 'nothing' });
+
+      expect(result).toMatchObject({ data: [], total: 0, totalPages: 1 });
+    });
+  });
+
+  describe('ListRecordingsQueryDto validation', () => {
+    const validateQuery = async (plain: Record<string, unknown>) =>
+      validate(plainToInstance(ListRecordingsQueryDto, plain), { whitelist: true, forbidNonWhitelisted: true });
+
+    it('should accept a full valid query and coerce numbers', async () => {
+      const plain = { page: '2', limit: '10', search: 'abc', source: 'voicemail', dateFrom: '2026-10-01T00:00:00.000Z', dateTo: '2026-10-31T23:59:59.999Z', sort: 'duration', order: 'asc' };
+      expect(await validateQuery(plain)).toHaveLength(0);
+      expect(plainToInstance(ListRecordingsQueryDto, plain)).toMatchObject({ page: 2, limit: 10 });
+    });
+
+    it('should accept an empty query', async () => {
+      expect(await validateQuery({})).toHaveLength(0);
+    });
+
+    it.each([
+      ['source', 'fax'],
+      ['sort', 'file_path'],
+      ['order', 'up'],
+      ['dateFrom', 'yesterday'],
+      ['dateTo', 'not-a-date'],
+      ['page', '0'],
+      ['page', 'abc'],
+      ['limit', '1000'],
+      ['search', 'x'.repeat(101)],
+      ['unknown', 'x'],
+    ])('should reject %s=%s', async (key, value) => {
+      const errors = await validateQuery({ [key]: value });
+      expect(errors.length).toBeGreaterThan(0);
     });
   });
 

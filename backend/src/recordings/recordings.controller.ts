@@ -1,7 +1,8 @@
-import { Controller, DefaultValuePipe, Delete, Get, Param, ParseIntPipe, Post, Query, Res, Body, Headers, UnauthorizedException } from '@nestjs/common';
+import { Controller, Delete, Get, Param, ParseIntPipe, Post, Query, Res, Body, Headers, UnauthorizedException } from '@nestjs/common';
 import type { Response } from 'express';
 import { createReadStream } from 'fs';
 import { CreateRecordingDto } from './dto/create-recording.dto';
+import { ListRecordingsQueryDto } from './dto/list-recordings-query.dto';
 import { RecordingsService } from './recordings.service';
 
 function recordingContentType(format: string | null | undefined): string {
@@ -18,11 +19,8 @@ export class RecordingsController {
   constructor(private readonly recordingsService: RecordingsService) {}
 
   @Get()
-  list(
-    @Query('page', new DefaultValuePipe(1), ParseIntPipe) page: number,
-    @Query('limit', new DefaultValuePipe(20), ParseIntPipe) limit: number,
-  ) {
-    return this.recordingsService.list(page, limit);
+  list(@Query() query: ListRecordingsQueryDto) {
+    return this.recordingsService.list(query);
   }
 
   @Post('internal')
