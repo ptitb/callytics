@@ -88,6 +88,30 @@ jobs:
           path: stasis/coverage/
           retention-days: 7
 
+  notifier-test:
+    name: Notifier Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      - name: Install notifier dependencies
+        run: npm ci --workspace notifier
+
+      - name: Typecheck notifier
+        run: npm run typecheck
+        working-directory: notifier
+
+      - name: Run notifier tests
+        run: npm run test:ci
+        working-directory: notifier
+
   backend-test:
     name: Backend Tests
     runs-on: ubuntu-latest
@@ -295,7 +319,7 @@ jobs:
     name: Build Check
     runs-on: ubuntu-latest
     timeout-minutes: 10
-    needs: [stasis-test, backend-test, frontend-test]
+    needs: [stasis-test, notifier-test, backend-test, frontend-test]
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

@@ -10,6 +10,10 @@
   - changed-files:
     - any-glob-to-any-file: 'stasis/**'
 
+'area: notifier':
+  - changed-files:
+    - any-glob-to-any-file: 'notifier/**'
+
 'area: docs':
   - changed-files:
     - any-glob-to-any-file: ['docs/**', 'docs-site/**']

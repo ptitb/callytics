@@ -198,6 +198,36 @@ services:
       start_period: 15s
     restart: unless-stopped
 
+  notifier:
+    # Turns Callytics flow webhooks into e-mails (missed call, new voicemail).
+    # Without SMTP settings it still starts and answers 503 to webhooks, so existing installations keep working.
+    build:
+      context: .
+      dockerfile: ./docker/notifier/Dockerfile
+    network_mode: "host"
+    environment:
+      TZ: ${TZ:-UTC}
+      NOTIFIER_BIND_ADDR: ${NOTIFIER_BIND_ADDR:-127.0.0.1}
+      NOTIFIER_PORT: ${NOTIFIER_PORT:-3005}
+      NOTIFIER_TOKEN: ${NOTIFIER_TOKEN:-}
+      BACKEND_URL: ${BACKEND_URL:-http://127.0.0.1:3001}
+      SMTP_HOST: ${SMTP_HOST:-}
+      SMTP_PORT: ${SMTP_PORT:-587}
+      SMTP_SECURE: ${SMTP_SECURE:-false}
+      SMTP_USER: ${SMTP_USER:-}
+      SMTP_PASS: ${SMTP_PASS:-}
+      NOTIFY_FROM: ${NOTIFY_FROM:-}
+      NOTIFY_TO: ${NOTIFY_TO:-}
+      NOTIFY_LANGUAGE: ${NOTIFY_LANGUAGE:-nl}
+      NOTIFY_TIMEZONE: ${NOTIFY_TIMEZONE:-Europe/Amsterdam}
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:$${NOTIFIER_PORT}/health >/dev/null || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+
   wireguard:
     image: linuxserver/wireguard
     profiles: [vpn]

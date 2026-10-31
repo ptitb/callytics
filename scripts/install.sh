@@ -103,6 +103,7 @@ ensure_secret DB_PASS
 ensure_secret ARI_PASS
 ensure_secret AMI_PASS
 ensure_secret RECORDINGS_INTERNAL_TOKEN
+ensure_secret NOTIFIER_TOKEN
 # Aliases read by some backend services and by the test harness.
 set_env POSTGRES_PASSWORD "$(get_env DB_PASS)"
 set_env ARI_PASSWORD "$(get_env ARI_PASS)"
