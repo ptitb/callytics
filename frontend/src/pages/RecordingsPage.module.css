@@ -33,12 +33,26 @@
   table-layout: fixed;
 }
 
-.table th:nth-child(1) { width: 22%; }
-.table th:nth-child(2) { width: 8%; }
-.table th:nth-child(3) { width: 8%; }
-.table th:nth-child(4) { width: 28%; }
-.table th:nth-child(5) { width: 18%; }
-.table th:nth-child(6) { width: 16%; text-align: right; }
+/* Fixed widths for source, number, operator, duration, date and actions; filename and preview share the rest. */
+.table th:nth-child(1) { width: auto; }
+.table th:nth-child(2) { width: 90px; }
+.table th:nth-child(3) { width: 160px; }
+.table th:nth-child(4) { width: 140px; }
+.table th:nth-child(5) { width: 90px; }
+.table th:nth-child(6) { width: auto; min-width: 260px; }
+.table th:nth-child(7) { width: 180px; }
+.table th:nth-child(8) { width: 210px; text-align: right; }
+
+.table td:nth-child(3),
+.table td:nth-child(7) {
+  white-space: nowrap;
+}
+
+.table td:nth-child(1),
+.table td:nth-child(4) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 
 .emptyState {
   text-align: center;
@@ -171,7 +185,7 @@
   }
 
   .table {
-    min-width: 680px;
+    min-width: 1100px;
     table-layout: auto;
   }
 
