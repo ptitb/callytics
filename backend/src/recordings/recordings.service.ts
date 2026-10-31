@@ -79,7 +79,8 @@ const EFFECTIVE_RECORDINGS_SQL = `
 
 /** Whitelist mapping of the public sort parameter to columns of the effective recordings query. */
 const RECORDING_SORT_COLUMNS: Record<RecordingSortField, string> = {
-  filename: 'file_name',
+  // The filename column shows the call id, so sort on what the user sees.
+  filename: 'call_id',
   source: 'source',
   number: 'number',
   operator: 'operator',
@@ -259,7 +260,7 @@ export class RecordingsService implements OnModuleInit {
       params.push(`%${search.replace(/[\\%_]/g, '\\$&')}%`);
       const placeholder = `$${params.length}`;
       conditions.push(
-        `(rec.number ILIKE ${placeholder} ESCAPE '\\' OR rec.operator ILIKE ${placeholder} ESCAPE '\\' OR rec.file_name ILIKE ${placeholder} ESCAPE '\\')`,
+        `(rec.number ILIKE ${placeholder} ESCAPE '\\' OR rec.operator ILIKE ${placeholder} ESCAPE '\\' OR rec.file_name ILIKE ${placeholder} ESCAPE '\\' OR rec.call_id ILIKE ${placeholder} ESCAPE '\\')`,
       );
     }
     if (query.source) {

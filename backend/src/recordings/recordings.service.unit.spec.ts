@@ -144,7 +144,7 @@ describe('RecordingsService', () => {
     });
 
     it.each([
-      ['filename', 'file_name'],
+      ['filename', 'call_id'],
       ['source', 'source'],
       ['number', 'number'],
       ['operator', 'operator'],
@@ -186,6 +186,7 @@ describe('RecordingsService', () => {
         expect(sql).toContain('rec.number ILIKE $1');
         expect(sql).toContain('rec.operator ILIKE $1');
         expect(sql).toContain('rec.file_name ILIKE $1');
+        expect(sql).toContain('rec.call_id ILIKE $1');
         expect(sql).toContain('rec.source = $2');
         expect(sql).toContain('rec.created_at >= $3::timestamptz');
         expect(sql).toContain('rec.created_at <= $4::timestamptz');
