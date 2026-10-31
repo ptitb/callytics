@@ -1058,7 +1058,10 @@ export class AsteriskConfigService implements OnModuleInit {
       "[transport-ws]",
       "type = transport",
       "protocol = ws",
-      `bind = ${process.env.ARI_BIND_ADDR?.trim() || "127.0.0.1"}:8088`,
+      // WebSocket connections are accepted by the Asterisk HTTP server (http.conf, ARI_BIND_ADDR),
+      // so this bind opens no port. Asterisk does bind the RTP socket of WebRTC endpoints to this
+      // address: a loopback address here makes browser media fail (ICE gets no responses).
+      "bind = 0.0.0.0:8088",
       ...localNets.map((localNet) => `local_net = ${localNet}`),
       "",
     ].join("\n");
