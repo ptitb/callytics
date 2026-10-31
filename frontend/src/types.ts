@@ -661,6 +661,8 @@ export interface RecordingItem {
   channelId: string;
   flowId: number | null;
   flowName: string | null;
+  remoteNumber: string | null;
+  operatorLabel: string | null;
   fileName: string;
   filePath: string;
   format: string;

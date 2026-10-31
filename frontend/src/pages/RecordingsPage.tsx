@@ -111,12 +111,14 @@ export function RecordingsPage() {
               <>
                 {Array.from({ length: 3 }, (_, i) => (
                   <SkeletonRow key={i} columns={[
-                    { width: '20%' },
+                    { width: '15%' },
+                    { width: '10%' },
+                    { width: '12%' },
+                    { width: '12%' },
+                    { width: '10%' },
                     { width: '15%' },
                     { width: '15%' },
-                    { width: '15%' },
-                    { width: '20%' },
-                    { width: '15%' },
+                    { width: '11%' },
                   ]} />
                 ))}
               </>
@@ -126,6 +128,8 @@ export function RecordingsPage() {
               <tr>
                 <th>Filename</th>
                 <th>source</th>
+                <th>number</th>
+                <th>operator</th>
                 <th>Duration</th>
                 <th>preview</th>
                 <th>Date</th>
@@ -135,7 +139,7 @@ export function RecordingsPage() {
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={6} className={styles.emptyState}>No recordings yet. Recordings appear here automatically after calls.</td>
+                  <td colSpan={8} className={styles.emptyState}>No recordings yet. Recordings appear here automatically after calls.</td>
                 </tr>
               ) : items.map((item) => (
                 <tr key={item.id} className="table-row-hover">
@@ -144,6 +148,8 @@ export function RecordingsPage() {
                     <div className={styles.meta}>{item.flowName || 'unknown flow'}</div>
                   </td>
                   <td className={styles.meta}>{item.recordingType || 'inbound'}</td>
+                  <td className={styles.meta}>{item.remoteNumber || '—'}</td>
+                  <td className={styles.meta}>{item.operatorLabel || '—'}</td>
                   <td className={styles.duration}>{formatDuration(item.durationSeconds)}</td>
                   <td className={styles.previewCell} onClick={() => setActiveId(item.id)}>
                     <AudioPreviewPlayer key={item.id} src={`${backendBase}${item.streamUrl}`} isActive={activeId === null || activeId === item.id} />
