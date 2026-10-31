@@ -161,6 +161,14 @@ describe('api library', () => {
     expect(axios.get).toHaveBeenCalledWith('/recordings', { params: { page: 1, limit: 20 } });
   });
 
+  it('listRecordings sends only the filters that are set', async () => {
+    (axios.get as any).mockResolvedValue({ data: { data: [], total: 0 } });
+    await api.listRecordings(2, 10, { search: 'abc', source: 'voicemail', dateFrom: undefined, sort: 'date', order: 'desc' });
+    expect(axios.get).toHaveBeenCalledWith('/recordings', {
+      params: { page: 2, limit: 10, search: 'abc', source: 'voicemail', sort: 'date', order: 'desc' },
+    });
+  });
+
   it('getRecording calls correct endpoint', async () => {
     (axios.get as any).mockResolvedValue({ data: {} });
     await api.getRecording(1);

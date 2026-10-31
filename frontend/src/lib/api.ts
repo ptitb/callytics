@@ -281,8 +281,25 @@ export async function updateAudio(id: number, payload: { name: string }): Promis
   return response.data;
 }
 
-export async function listRecordings(page = 1, limit = 20): Promise<PaginatedResponse<RecordingItem>> {
-  const response = await api.get<PaginatedResponse<RecordingItem>>('/recordings', { params: { page, limit } });
+export type RecordingSource = 'inbound' | 'outbound' | 'voicemail';
+export type RecordingSortField = 'filename' | 'source' | 'number' | 'operator' | 'duration' | 'date';
+export type RecordingSortOrder = 'asc' | 'desc';
+
+export interface ListRecordingsFilters {
+  search?: string;
+  source?: RecordingSource;
+  dateFrom?: string;
+  dateTo?: string;
+  sort?: RecordingSortField;
+  order?: RecordingSortOrder;
+}
+
+export async function listRecordings(page = 1, limit = 20, filters: ListRecordingsFilters = {}): Promise<PaginatedResponse<RecordingItem>> {
+  const params: Record<string, string | number> = { page, limit };
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params[key] = value;
+  }
+  const response = await api.get<PaginatedResponse<RecordingItem>>('/recordings', { params });
   return response.data;
 }
 

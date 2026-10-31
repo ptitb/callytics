@@ -5,7 +5,13 @@ import { ErrorMessage } from '../components/common/ErrorMessage';
 import { Pagination } from '../components/common/Pagination';
 import { SkeletonRow } from '../components/common/skeleton';
 import { ConfirmDialog } from '../components/ConfirmDialog/ConfirmDialog';
-import { deleteRecording, listRecordings } from '../lib/api';
+import {
+  deleteRecording,
+  listRecordings,
+  type RecordingSortField,
+  type RecordingSortOrder,
+  type RecordingSource,
+} from '../lib/api';
 import { getApiError } from '../lib/apiError';
 import { getMediaBaseUrl } from '../lib/backendBaseUrl';
 import { formatDateTime } from '../lib/time';
@@ -14,6 +20,33 @@ import type { RecordingItem } from '../types';
 import styles from './RecordingsPage.module.css';
 
 const backendBase = getMediaBaseUrl();
+
+const SEARCH_DEBOUNCE_MS = 350;
+
+const SOURCE_FILTERS: Array<{ value: RecordingSource | 'all'; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'inbound', label: 'Inbound' },
+  { value: 'outbound', label: 'Outbound' },
+  { value: 'voicemail', label: 'Voicemail' },
+];
+
+const SORTABLE_COLUMNS: Array<{ field: RecordingSortField; label: string }> = [
+  { field: 'filename', label: 'Filename' },
+  { field: 'source', label: 'source' },
+  { field: 'number', label: 'number' },
+  { field: 'operator', label: 'operator' },
+  { field: 'duration', label: 'Duration' },
+];
+
+/** First click on a column sorts ascending, except date and duration which start with the newest/longest first. */
+const DEFAULT_ORDER: Record<RecordingSortField, RecordingSortOrder> = {
+  filename: 'asc',
+  source: 'asc',
+  number: 'asc',
+  operator: 'asc',
+  duration: 'desc',
+  date: 'desc',
+};
 
 function formatDuration(seconds: number | null): string {
   if (seconds === null || Number.isNaN(seconds)) return '00:00';
@@ -49,6 +82,23 @@ export function RecordingsPage() {
     };
   }, []);
 
+  const [searchInput, setSearchInput] = useState('');
+  const [search, setSearch] = useState('');
+  const [source, setSource] = useState<RecordingSource | 'all'>('all');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [sort, setSort] = useState<RecordingSortField>('date');
+  const [order, setOrder] = useState<RecordingSortOrder>('desc');
+  const hasActiveFilters = Boolean(searchInput.trim() || source !== 'all' || dateFrom || dateTo);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => {
+      setSearch(searchInput.trim());
+      setPage(1);
+    }, SEARCH_DEBOUNCE_MS);
+    return () => window.clearTimeout(timer);
+  }, [searchInput]);
+
   const [limit, setLimit] = useState(10);
   const [totalPages, setTotalPages] = useState(1);
   const showPagination = total > 0;
@@ -57,7 +107,14 @@ export function RecordingsPage() {
     setIsLoading(true);
     setLoadError(null);
     try {
-      const response = await listRecordings(nextPage, nextLimit);
+      const response = await listRecordings(nextPage, nextLimit, {
+        search: search || undefined,
+        source: source === 'all' ? undefined : source,
+        dateFrom: dateFrom ? new Date(`${dateFrom}T00:00:00.000Z`).toISOString() : undefined,
+        dateTo: dateTo ? new Date(`${dateTo}T23:59:59.999Z`).toISOString() : undefined,
+        sort,
+        order,
+      });
       if (response.totalPages > 0 && nextPage > response.totalPages) {
         await load(response.totalPages, nextLimit);
         return;
@@ -77,7 +134,7 @@ export function RecordingsPage() {
 
   useEffect(() => {
     void load(page, limit);
-  }, [page, limit]);
+  }, [page, limit, search, source, dateFrom, dateTo, sort, order]);
 
   const confirmDelete = async (id: number) => {
     setIsDeleting(true);
@@ -96,6 +153,43 @@ export function RecordingsPage() {
       setIsDeleting(false);
     }
   };
+
+  const changeFilter = <T,>(setter: (value: T) => void) => (value: T) => {
+    setter(value);
+    setPage(1);
+  };
+
+  const clearFilters = () => {
+    setSearchInput('');
+    setSearch('');
+    setSource('all');
+    setDateFrom('');
+    setDateTo('');
+    setPage(1);
+  };
+
+  const toggleSort = (field: RecordingSortField) => {
+    if (field === sort) {
+      setOrder((current) => (current === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setSort(field);
+      setOrder(DEFAULT_ORDER[field]);
+    }
+    setPage(1);
+  };
+
+  const renderSortHeader = (field: RecordingSortField, label: string) => {
+    const active = sort === field;
+    return (
+      <th key={field} aria-sort={active ? (order === 'asc' ? 'ascending' : 'descending') : 'none'}>
+        <button className={styles.sortButton} type="button" onClick={() => toggleSort(field)}>
+          {label}
+          <span className={styles.sortIndicator} aria-hidden="true">{active ? (order === 'asc' ? '▲' : '▼') : ''}</span>
+        </button>
+      </th>
+    );
+  };
+
   const blockingLoadError = !isLoading && !isInitialLoad ? loadError : null;
 
   return (
@@ -106,8 +200,49 @@ export function RecordingsPage() {
       {blockingLoadError ? <ErrorMessage message={blockingLoadError} /> : null}
       {!blockingLoadError ? (
         <>
+          <div className={styles.filters}>
+            <input
+              className={styles.input}
+              placeholder="Search number, operator or filename"
+              aria-label="Search recordings"
+              value={searchInput}
+              onChange={(event) => setSearchInput(event.target.value)}
+            />
+            <input
+              className={styles.input}
+              type="date"
+              aria-label="Date from"
+              value={dateFrom}
+              onChange={(event) => changeFilter(setDateFrom)(event.target.value)}
+            />
+            <input
+              className={styles.input}
+              type="date"
+              aria-label="Date to"
+              value={dateTo}
+              onChange={(event) => changeFilter(setDateTo)(event.target.value)}
+            />
+            {hasActiveFilters ? (
+              <button className={styles.clearFiltersButton} type="button" onClick={clearFilters}>
+                Clear filters
+              </button>
+            ) : null}
+          </div>
+          <div className={styles.filterPills}>
+            {SOURCE_FILTERS.map((option) => (
+              <button
+                key={option.value}
+                className={`${styles.filterPill} ${source === option.value ? styles.filterPillActive : ''}`}
+                type="button"
+                aria-pressed={source === option.value}
+                onClick={() => changeFilter(setSource)(option.value)}
+              >
+                {option.label}
+              </button>
+            ))}
+          </div>
           <div className={styles.tableCard}>
-            {isLoading ? (
+            {isInitialLoad && isLoading ? (
               <>
                 {Array.from({ length: 3 }, (_, i) => (
                   <SkeletonRow key={i} columns={[
@@ -123,33 +258,29 @@ export function RecordingsPage() {
                 ))}
               </>
             ) : (
-              <table className={styles.table}>
+              <table className={`${styles.table} ${isLoading ? styles.tableLoading : ''}`}>
             <thead>
               <tr>
-                <th>Filename</th>
-                <th>source</th>
-                <th>number</th>
-                <th>operator</th>
-                <th>Duration</th>
+                {SORTABLE_COLUMNS.map((column) => renderSortHeader(column.field, column.label))}
                 <th>preview</th>
-                <th>Date</th>
+                {renderSortHeader('date', 'Date')}
                 <th>Actions</th>
               </tr>
             </thead>
             <tbody>
               {items.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className={styles.emptyState}>No recordings yet. Recordings appear here automatically after calls.</td>
+                  <td colSpan={8} className={styles.emptyState}>{hasActiveFilters ? 'No recordings match the current filters.' : 'No recordings yet. Recordings appear here automatically after calls.'}</td>
                 </tr>
               ) : items.map((item) => (
                 <tr key={item.id} className="table-row-hover">
-                  <td>
+                  <td title={item.fileName}>
                     <div className={styles.name}>{item.callId.slice(0, 16)}</div>
                     <div className={styles.meta}>{item.flowName || 'unknown flow'}</div>
                   </td>
                   <td className={styles.meta}>{item.recordingType || 'inbound'}</td>
                   <td className={styles.meta}>{item.remoteNumber || '—'}</td>
-                  <td className={styles.meta}>{item.operatorLabel || '—'}</td>
+                  <td className={styles.meta} title={item.operatorLabel || undefined}>{item.operatorLabel || '—'}</td>
                   <td className={styles.duration}>{formatDuration(item.durationSeconds)}</td>
                   <td className={styles.previewCell} onClick={() => setActiveId(item.id)}>
                     <AudioPreviewPlayer key={item.id} src={`${backendBase}${item.streamUrl}`} isActive={activeId === null || activeId === item.id} />
