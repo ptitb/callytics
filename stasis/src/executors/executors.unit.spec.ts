@@ -700,7 +700,7 @@ it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>
     await flushPromises(20);
 
     await expect(promise).resolves.toBe('done');
-    expect(beginNodeRecordingMock).toHaveBeenCalled();
+    expect(beginNodeRecordingMock).toHaveBeenCalledWith(session, expect.any(String), expect.any(String), 'transfer', '2001');
     expect(persistSessionRecordingMock).toHaveBeenCalledWith(session);
     expect(session.webhookPayload).toEqual({
       bridge: expect.objectContaining({

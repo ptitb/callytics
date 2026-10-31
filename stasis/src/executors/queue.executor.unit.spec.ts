@@ -30,6 +30,12 @@ jest.mock('../engine/queueManager', () => ({
   onCustomerHangup: jest.fn().mockResolvedValue(undefined),
 }));
 
+jest.mock('../bridgeRecording', () => ({
+  beginNodeRecording: jest.fn().mockResolvedValue(undefined),
+}));
+import { beginNodeRecording } from '../bridgeRecording';
+const beginNodeRecordingMock = beginNodeRecording as jest.MockedFunction<typeof beginNodeRecording>;
+
 import { executeQueue } from './queue.executor';
 
 describe('queue.executor', () => {
@@ -161,6 +167,26 @@ describe('queue.executor', () => {
     expect(result).toBe('connected');
     expect(ariClient.channels.stopMoh).toHaveBeenCalledWith({ channelId: 'op-channel-1' });
     expect(ariClient.bridges.addChannel).toHaveBeenCalledTimes(2);
+  });
+
+  it('records the call with the operator name as operator label', async () => {
+    mockQuery
+      .mockResolvedValueOnce([{ id: 1, name: 'Support', max_wait_seconds: 300, wait_audio_file_id: null }] as any)
+      .mockResolvedValueOnce([{ name: 'Alice' }] as any);
+    mockRedisClient.sCard.mockResolvedValueOnce(1);
+    mockRedisClient.sPop.mockResolvedValueOnce('42');
+    mockRedisClient.get.mockResolvedValueOnce('op-channel-1');
+
+    const ariClient = createAriClient();
+    const session = makeSession();
+    const node = { config: { queue_id: 1, record_call: true } };
+
+    const promise = executeQueue(fakeChannel, node as any, session as any, ariClient);
+    await flushPromises();
+    ariClient.emit('StasisEnd', { channel: { id: 'ch-1' } });
+    await promise;
+
+    expect(beginNodeRecordingMock).toHaveBeenCalledWith(session, 'bridge-x', expect.stringContaining('-queue-Support-'), 'queue', 'Alice');
   });
 
   it('puts operator back and waits when operator channel is missing', async () => {

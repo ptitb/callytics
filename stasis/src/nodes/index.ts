@@ -810,7 +810,7 @@ async function executeTransfer(
     });
 
     if (Boolean(targetConfig.record_call)) {
-      await beginNodeRecording(session, bridgeId, `${session.callUuid}-transfer-${Date.now()}`, 'transfer');
+      await beginNodeRecording(session, bridgeId, `${session.callUuid}-transfer-${Date.now()}`, 'transfer', String(targetConfig.target_value || '').trim() || null);
     }
 
     let teardownTriggered = false;

@@ -70,7 +70,7 @@ export async function startLiveBridgeRecording(bridgeId: string, recordingBaseNa
   };
 }
 
-export async function beginNodeRecording(session: CallSession, bridgeId: string, recordingBaseName: string, context: string): Promise<void> {
+export async function beginNodeRecording(session: CallSession, bridgeId: string, recordingBaseName: string, context: string, operatorLabel: string | null = null): Promise<void> {
   if (session.recording && !session.recording.endedAt) {
     try {
       await stopLiveRecording(session.recording.name);
@@ -81,6 +81,7 @@ export async function beginNodeRecording(session: CallSession, bridgeId: string,
   }
 
   session.recording = await startLiveBridgeRecording(bridgeId, recordingBaseName);
+  session.recording.operatorLabel = operatorLabel;
   logEvent('RecordingStarted', {
     callId: session.callUuid,
     context,
@@ -117,6 +118,8 @@ export async function persistSessionRecording(session: CallSession): Promise<{ i
       callId: session.callUuid,
       channelId: session.channelId,
       flowId: session.flow.id,
+      remoteNumber: session.callerNumber || null,
+      operatorLabel: recording.operatorLabel || null,
       fileName: recording.fileName,
       filePath: recording.filePath,
       format: recording.format,

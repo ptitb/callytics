@@ -257,9 +257,11 @@ async function persistVoicemailRecording(
         format,
         duration_seconds,
         started_at,
-        ended_at
+        ended_at,
+        remote_number,
+        operator_label
       )
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
       RETURNING id
     `,
     [
@@ -274,6 +276,8 @@ async function persistVoicemailRecording(
       durationSeconds,
       startedAt.toISOString(),
       endedAt.toISOString(),
+      session.callerNumber || null,
+      null,
     ],
   );
 

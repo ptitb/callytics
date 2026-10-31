@@ -386,7 +386,7 @@ describe('hunt executor — additional coverage', () => {
     await flushPromises(20);
 
     await expect(promise).resolves.toBe('done');
-    expect(beginNodeRecordingMock).toHaveBeenCalled();
+    expect(beginNodeRecordingMock).toHaveBeenCalledWith(session, expect.any(String), expect.any(String), 'hunt', 'agent-sip');
     expect(persistSessionRecordingMock).toHaveBeenCalledWith(session);
     expect(session.webhookPayload).toEqual({
       outcome: { status: 'completed' },

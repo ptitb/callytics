@@ -114,6 +114,17 @@ async function resolveQueuePstnMember(operatorId: number): Promise<QueuePstnMemb
   return { number, trunkId };
 }
 
+async function resolveOperatorName(operatorId: number): Promise<string | null> {
+  try {
+    const rows = await query('SELECT name FROM operators WHERE id = $1 LIMIT 1', [operatorId]) as Array<{ name?: string | null }>;
+    const name = String(rows?.[0]?.name || '').trim();
+    return name || null;
+  } catch {
+    // The recording is more important than its operator label.
+    return null;
+  }
+}
+
 async function originateQueuePstnMember(
   ariClient: unknown,
   operatorId: number,
@@ -268,7 +279,8 @@ export async function executeQueue(
           await ari.bridges.addChannel({ bridgeId: bridge.id, channel: operatorChannelId });
           if (Boolean(config.record_call)) {
             const safeQueueName = queueName.replace(/[^a-zA-Z0-9_-]/g, '_');
-            await beginNodeRecording(session, bridge.id, `${session.callUuid}-queue-${safeQueueName}-${Date.now()}`, 'queue');
+            const operatorName = await resolveOperatorName(Number(operatorId));
+            await beginNodeRecording(session, bridge.id, `${session.callUuid}-queue-${safeQueueName}-${Date.now()}`, 'queue', operatorName);
           }
 
           logEvent('QueueConnected', { customerChannelId: channelId, operatorId, bridgeId: bridge.id, queueId });

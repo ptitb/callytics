@@ -7,6 +7,8 @@ export interface CallRecordingState {
   format: string;
   startedAt: Date;
   endedAt: Date | null;
+  /** Who handled the call on the internal side (extension, destination or operator name). */
+  operatorLabel?: string | null;
 }
 
 export interface InboundBridgeState {

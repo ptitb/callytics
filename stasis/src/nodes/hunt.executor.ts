@@ -618,7 +618,7 @@ export async function executeHunt(
     }
   };
 
-  const finalizeAnswer = async (answeredChannel: HuntExecutorChannel): Promise<string> => {
+  const finalizeAnswer = async (answeredChannel: HuntExecutorChannel, operatorLabel: string | null): Promise<string> => {
     const endPromise = waitForChannelEnd(client, [channel.id, answeredChannel.id]);
     await stopHold();
     await hangupChannels(pendingChannels, answeredChannel.id);
@@ -628,7 +628,7 @@ export async function executeHunt(
     const connectedAt = new Date();
     if (Boolean(nodeConfig.record_call)) {
       const ts = Date.now();
-      await beginNodeRecording(session, bridgeId, `${session.callUuid}-hunt-${ts}`, 'hunt');
+      await beginNodeRecording(session, bridgeId, `${session.callUuid}-hunt-${ts}`, 'hunt', operatorLabel);
     }
     const endedChannelId = await endPromise;
     const disconnectedAt = new Date();
@@ -666,6 +666,12 @@ export async function executeHunt(
         }),
       );
 
+      const destinationLabelByChannelId = new Map<string, string>();
+      createResults.forEach((result, index) => {
+        if (result.status === 'fulfilled' && result.value.channel) {
+          destinationLabelByChannelId.set(result.value.channel.id, destinations[index].raw.target_value);
+        }
+      });
       pendingChannels = createResults
         .flatMap((result) => (result.status === 'fulfilled' && result.value.channel ? [result.value.channel] : []));
 
@@ -677,7 +683,7 @@ export async function executeHunt(
       const alreadyAnswered = pendingChannels.find((item) => String(item.state || '').toLowerCase() === 'up');
       if (alreadyAnswered) {
         logEvent('HuntGroupLegAlreadyUp', { channelId: alreadyAnswered.id });
-        return await finalizeAnswer(alreadyAnswered);
+        return await finalizeAnswer(alreadyAnswered, destinationLabelByChannelId.get(alreadyAnswered.id) ?? null);
       }
 
       const outcome = await waitForFirstAnswerOrAllDone(
@@ -696,7 +702,7 @@ export async function executeHunt(
         const answered = pendingChannels.find((item) => item.id === outcome.channelId);
         if (answered) {
           logEvent('HuntGroupAnswered', { channelId: answered.id });
-          return await finalizeAnswer(answered);
+          return await finalizeAnswer(answered, destinationLabelByChannelId.get(answered.id) ?? null);
         }
       }
 
@@ -757,7 +763,7 @@ export async function executeHunt(
         // In this call flow, outbound legs only enter the hunt-outbound Stasis app once the
         // destination has effectively answered. Bridge immediately to avoid missing late/absent
         // ChannelStateChange events and trapping caller on hold.
-        return await finalizeAnswer(attemptResult.channel);
+        return await finalizeAnswer(attemptResult.channel, destinationEntry.target_value || null);
       }
 
       const remainingAfterAttempt = totalTimeoutMs - (Date.now() - startTime);
