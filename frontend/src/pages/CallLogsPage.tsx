@@ -109,7 +109,7 @@ export function CallLogsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo] = useState('');
   const [endReason, setEndReason] = useState('');
-  const [direction, setDirection] = useState<'all' | 'inbound' | 'outbound'>('all');
+  const [direction, setDirection] = useState<'all' | 'inbound' | 'outbound' | 'internal'>('all');
   const callLogIdParam = Number(searchParams.get('callLogId') || 0) || undefined;
 
   useEffect(() => {
@@ -402,6 +402,7 @@ export function CallLogsPage() {
           <button className={`${styles.filterPill} ${direction === 'all' ? styles.filterPillActive : ''}`} type="button" onClick={() => setDirection('all')}>All</button>
           <button className={`${styles.filterPill} ${direction === 'inbound' ? styles.filterPillActive : ''}`} type="button" onClick={() => setDirection('inbound')}>Inbound</button>
           <button className={`${styles.filterPill} ${direction === 'outbound' ? styles.filterPillActive : ''}`} type="button" onClick={() => setDirection('outbound')}>Outbound</button>
+          <button className={`${styles.filterPill} ${direction === 'internal' ? styles.filterPillActive : ''}`} type="button" onClick={() => setDirection('internal')}>Internal</button>
         </div>
 
         <div className={styles.tableCard}>

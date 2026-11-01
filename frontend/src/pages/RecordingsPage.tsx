@@ -27,6 +27,7 @@ const SOURCE_FILTERS: Array<{ value: RecordingSource | 'all'; label: string }> =
   { value: 'all', label: 'All' },
   { value: 'inbound', label: 'Inbound' },
   { value: 'outbound', label: 'Outbound' },
+  { value: 'internal', label: 'Internal' },
   { value: 'voicemail', label: 'Voicemail' },
 ];
 

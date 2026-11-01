@@ -281,7 +281,7 @@ export async function updateAudio(id: number, payload: { name: string }): Promis
   return response.data;
 }
 
-export type RecordingSource = 'inbound' | 'outbound' | 'voicemail';
+export type RecordingSource = 'inbound' | 'outbound' | 'internal' | 'voicemail';
 export type RecordingSortField = 'filename' | 'source' | 'number' | 'operator' | 'duration' | 'date';
 export type RecordingSortOrder = 'asc' | 'desc';
 

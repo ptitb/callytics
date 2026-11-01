@@ -64,6 +64,24 @@ export function validateOutboundCountryCode(value: string): string | null {
   return null;
 }
 
+/** Mirrors the backend rule for the minimum outbound number length (0 = off). Returns an error message or null. */
+export function validateOutboundMinNumberLength(value: string): string | null {
+  const parsed = Number(value);
+  if (value.trim() === '' || !Number.isInteger(parsed) || parsed < 0 || parsed > 20) {
+    return 'Minimum number length must be a whole number from 0 to 20';
+  }
+  return null;
+}
+
+/** Mirrors the backend rule for the always allowed short numbers. Returns an error message or null. */
+export function validateOutboundAllowedShortNumbers(value: string): string | null {
+  const entries = value.split(',').map((entry) => entry.trim()).filter((entry) => entry !== '');
+  if (entries.some((entry) => !/^\d+$/.test(entry))) {
+    return 'Allowed short numbers may only contain digits separated by commas';
+  }
+  return null;
+}
+
 /** Mirrors the backend rule for the international prefix. Returns an error message or null. */
 export function validateOutboundInternationalPrefix(value: string): string | null {
   if (!/^\d{1,4}$/.test(value)) {

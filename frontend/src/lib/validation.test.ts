@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { findInvalidIpMatches, validateOutboundCountryCode, validateOutboundInternationalPrefix, validateRtpRange, isValidIpMatch, normalizePhoneNumber, parseIpMatchInput } from './validation';
+import { findInvalidIpMatches, validateOutboundAllowedShortNumbers, validateOutboundCountryCode, validateOutboundMinNumberLength, validateOutboundInternationalPrefix, validateRtpRange, isValidIpMatch, normalizePhoneNumber, parseIpMatchInput } from './validation';
 
 describe('normalizePhoneNumber', () => {
   it('removes spaces and separators', () => {
@@ -80,5 +80,25 @@ describe('validateOutboundInternationalPrefix', () => {
     for (const value of ['', '00000', '0a', '+']) {
       expect(validateOutboundInternationalPrefix(value)).toMatch(/International prefix/);
     }
+  });
+});
+
+describe('validateOutboundMinNumberLength', () => {
+  it.each(['0', '6', '20'])('accepts %s', (value) => {
+    expect(validateOutboundMinNumberLength(value)).toBeNull();
+  });
+
+  it.each(['', ' ', '-1', '21', '2.5', 'abc'])('rejects %p', (value) => {
+    expect(validateOutboundMinNumberLength(value)).not.toBeNull();
+  });
+});
+
+describe('validateOutboundAllowedShortNumbers', () => {
+  it.each(['112', '112,911', ' 112 , 911 ', ''])('accepts %p', (value) => {
+    expect(validateOutboundAllowedShortNumbers(value)).toBeNull();
+  });
+
+  it.each(['11a', '112;911', '+112'])('rejects %p', (value) => {
+    expect(validateOutboundAllowedShortNumbers(value)).not.toBeNull();
   });
 });

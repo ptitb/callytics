@@ -7,8 +7,10 @@ import { useWindowWidth } from '../hooks/useWindowWidth';
 import { getSettings, updateSettings } from '../lib/api';
 import { getApiError } from '../lib/apiError';
 import {
+  validateOutboundAllowedShortNumbers,
   validateOutboundCountryCode,
   validateOutboundInternationalPrefix,
+  validateOutboundMinNumberLength,
   validateRtpRange,
 } from '../lib/validation';
 import type { OutboundWaitAudio } from '../types';
@@ -31,6 +33,9 @@ export function SettingsPage() {
   const [countryCode, setCountryCode] = useState('31');
   const [internationalPrefix, setInternationalPrefix] = useState('00');
   const [waitAudio, setWaitAudio] = useState<OutboundWaitAudio>('ringback');
+  const [minNumberLength, setMinNumberLength] = useState('0');
+  const [allowedShortNumbers, setAllowedShortNumbers] = useState('112');
+  const [recordInternalCalls, setRecordInternalCalls] = useState(false);
   const [outboundSaveState, setOutboundSaveState] = useState<SaveState>('idle');
   const [outboundError, setOutboundError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
@@ -50,6 +55,9 @@ export function SettingsPage() {
         setCountryCode(String(settings.outbound_country_code ?? '31'));
         setInternationalPrefix(String(settings.outbound_international_prefix ?? '00'));
         setWaitAudio(settings.outbound_wait_audio ?? 'ringback');
+        setMinNumberLength(String(settings.outbound_min_number_length ?? 0));
+        setAllowedShortNumbers(settings.outbound_allowed_short_numbers ?? '112');
+        setRecordInternalCalls(settings.record_internal_calls ?? false);
       } catch (error) {
         setLoadError(getApiError(error, 'failed to load settings'));
       } finally {
@@ -116,7 +124,10 @@ export function SettingsPage() {
 
   const handleSaveOutbound = async () => {
     setOutboundError(null);
-    const message = validateOutboundCountryCode(countryCode) ?? validateOutboundInternationalPrefix(internationalPrefix);
+    const message = validateOutboundCountryCode(countryCode)
+      ?? validateOutboundInternationalPrefix(internationalPrefix)
+      ?? validateOutboundMinNumberLength(minNumberLength)
+      ?? validateOutboundAllowedShortNumbers(allowedShortNumbers);
     if (message) {
       setOutboundSaveState('failed');
       setOutboundError(message);
@@ -131,12 +142,18 @@ export function SettingsPage() {
         outbound_country_code: countryCode,
         outbound_international_prefix: internationalPrefix,
         outbound_wait_audio: waitAudio,
+        outbound_min_number_length: Number(minNumberLength),
+        outbound_allowed_short_numbers: allowedShortNumbers,
+        record_internal_calls: recordInternalCalls,
       });
       setDialWithoutHash(settings.outbound_dial_without_hash ?? dialWithoutHash);
       setNormalizeE164(settings.outbound_normalize_e164 ?? normalizeE164);
       setCountryCode(String(settings.outbound_country_code ?? countryCode));
       setInternationalPrefix(String(settings.outbound_international_prefix ?? internationalPrefix));
       setWaitAudio(settings.outbound_wait_audio ?? waitAudio);
+      setMinNumberLength(String(settings.outbound_min_number_length ?? minNumberLength));
+      setAllowedShortNumbers(settings.outbound_allowed_short_numbers ?? allowedShortNumbers);
+      setRecordInternalCalls(settings.record_internal_calls ?? recordInternalCalls);
       setOutboundSaveState('saved');
       window.setTimeout(() => setOutboundSaveState('idle'), 2000);
     } catch (error) {
@@ -314,6 +331,41 @@ export function SettingsPage() {
             <p className={styles.note}>
               What the extension hears until the other side answers. A ringback tone is played by the phone itself, hold music is
               played by Asterisk.
+            </p>
+            <label className={styles.label} htmlFor="outbound-min-number-length">Minimum length for outbound numbers</label>
+            <input
+              className={styles.input}
+              id="outbound-min-number-length"
+              inputMode="numeric"
+              min="0"
+              onChange={(event) => setMinNumberLength(event.target.value)}
+              type="number"
+              value={minNumberLength}
+            />
+            <label className={styles.label} htmlFor="outbound-allowed-short-numbers">Always allowed short numbers</label>
+            <input
+              className={styles.input}
+              id="outbound-allowed-short-numbers"
+              onChange={(event) => setAllowedShortNumbers(event.target.value)}
+              type="text"
+              value={allowedShortNumbers}
+            />
+            <p className={styles.note}>
+              Numbers with fewer digits than the minimum are never sent to a trunk, the call fails with an error tone. This stops
+              a mistyped extension from reaching an outside line. Set to 0 to turn the check off. Numbers in the allowed list, comma
+              separated, always go through, so keep emergency numbers such as 112 here.
+            </p>
+            <label className={styles.checkboxRow} htmlFor="record-internal-calls">
+              <input
+                checked={recordInternalCalls}
+                id="record-internal-calls"
+                onChange={(event) => setRecordInternalCalls(event.target.checked)}
+                type="checkbox"
+              />
+              Record internal calls
+            </label>
+            <p className={styles.note}>
+              Records calls between extensions. Recordings of external calls follow the setting on the Trunks page.
             </p>
             {outboundError ? <p className={styles.note} role="alert">{outboundError}</p> : null}
           </div>

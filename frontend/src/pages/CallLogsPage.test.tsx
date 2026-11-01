@@ -1,8 +1,9 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor } from '@testing-library/react';
 
 import { describe, expect, it, vi } from 'vitest';
 import { CallLogsPage } from './CallLogsPage';
 import { renderWithRouter } from '../test/renderWithRouter';
+import * as api from '../lib/api';
 
 vi.mock('../lib/api', () => ({
   getDiagnosticsHealth: vi.fn(async () => ({
@@ -31,5 +32,17 @@ describe('CallLogsPage', () => {
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Call Logs' })).toBeInTheDocument());
     expect(screen.getByPlaceholderText('Search caller or called number')).toBeInTheDocument();
+  });
+
+  it('filters on the internal direction', async () => {
+    renderWithRouter(<CallLogsPage />);
+    await waitFor(() => expect(api.listCallLogs).toHaveBeenCalled());
+
+    fireEvent.click(screen.getByRole('button', { name: 'Internal' }));
+
+    await waitFor(() => {
+      const lastCall = vi.mocked(api.listCallLogs).mock.calls.at(-1);
+      expect(lastCall?.[0]).toMatchObject({ direction: 'internal' });
+    });
   });
 });

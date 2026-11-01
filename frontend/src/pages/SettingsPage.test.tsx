@@ -24,6 +24,9 @@ describe('SettingsPage coverage boost', () => {
       outbound_country_code: '31',
       outbound_international_prefix: '00',
       outbound_wait_audio: 'ringback',
+      outbound_min_number_length: 0,
+      outbound_allowed_short_numbers: '112',
+      record_internal_calls: false,
     });
     vi.mocked(api.updateSettings).mockResolvedValue({
       default_outbound_trunk_id: null,
@@ -36,6 +39,9 @@ describe('SettingsPage coverage boost', () => {
       outbound_country_code: '31',
       outbound_international_prefix: '00',
       outbound_wait_audio: 'ringback',
+      outbound_min_number_length: 0,
+      outbound_allowed_short_numbers: '112',
+      record_internal_calls: false,
     });
   });
 
@@ -54,6 +60,9 @@ describe('SettingsPage coverage boost', () => {
       outbound_country_code: '44',
       outbound_international_prefix: '011',
       outbound_wait_audio: 'moh',
+      outbound_min_number_length: 6,
+      outbound_allowed_short_numbers: '112,911',
+      record_internal_calls: true,
     });
     renderWithRouter(<SettingsPage />);
 
@@ -63,6 +72,9 @@ describe('SettingsPage coverage boost', () => {
     expect(screen.getByLabelText('Country code')).toHaveValue('44');
     expect(screen.getByLabelText('International prefix')).toHaveValue('011');
     expect(screen.getByLabelText('Waiting audio while dialing out')).toHaveValue('moh');
+    expect(screen.getByLabelText('Minimum length for outbound numbers')).toHaveValue(6);
+    expect(screen.getByLabelText('Always allowed short numbers')).toHaveValue('112,911');
+    expect(screen.getByLabelText('Record internal calls')).toBeChecked();
     expect(screen.getByRole('option', { name: 'Ringback tone' })).toBeInTheDocument();
     expect(screen.getByRole('option', { name: 'Hold music' })).toBeInTheDocument();
     expect(screen.getByText(/0612345678 becomes \+31612345678/)).toBeInTheDocument();
@@ -77,6 +89,9 @@ describe('SettingsPage coverage boost', () => {
     fireEvent.change(screen.getByLabelText('Country code'), { target: { value: '44' } });
     fireEvent.change(screen.getByLabelText('International prefix'), { target: { value: '011' } });
     fireEvent.change(screen.getByLabelText('Waiting audio while dialing out'), { target: { value: 'moh' } });
+    fireEvent.change(screen.getByLabelText('Minimum length for outbound numbers'), { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Always allowed short numbers'), { target: { value: '112, 911' } });
+    fireEvent.click(screen.getByLabelText('Record internal calls'));
     const saveButtons = screen.getAllByRole('button', { name: 'save' });
     fireEvent.click(saveButtons[2]);
 
@@ -86,7 +101,26 @@ describe('SettingsPage coverage boost', () => {
       outbound_country_code: '44',
       outbound_international_prefix: '011',
       outbound_wait_audio: 'moh',
+      outbound_min_number_length: 6,
+      outbound_allowed_short_numbers: '112, 911',
+      record_internal_calls: true,
     }));
+  });
+
+  it('does not save an invalid minimum length or short number list', async () => {
+    renderWithRouter(<SettingsPage />);
+    await screen.findByRole('heading', { name: 'Outbound dialing' });
+    const save = () => fireEvent.click(screen.getAllByRole('button', { name: /save|failed/ })[2]);
+
+    fireEvent.change(screen.getByLabelText('Minimum length for outbound numbers'), { target: { value: '-1' } });
+    save();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Minimum number length must be a whole number from 0 to 20');
+
+    fireEvent.change(screen.getByLabelText('Minimum length for outbound numbers'), { target: { value: '6' } });
+    fireEvent.change(screen.getByLabelText('Always allowed short numbers'), { target: { value: '112;911' } });
+    save();
+    expect(await screen.findByRole('alert')).toHaveTextContent('Allowed short numbers may only contain digits');
+    expect(api.updateSettings).not.toHaveBeenCalled();
   });
 
   it('does not save an invalid country code or prefix', async () => {

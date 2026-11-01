@@ -645,6 +645,9 @@ export interface SystemSettings {
   outbound_country_code: string;
   outbound_international_prefix: string;
   outbound_wait_audio: OutboundWaitAudio;
+  outbound_min_number_length: number;
+  outbound_allowed_short_numbers: string;
+  record_internal_calls: boolean;
 }
 
 export type SettingsPatch = Partial<SystemSettings> & Record<string, SettingValue | undefined>;

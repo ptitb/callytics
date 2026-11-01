@@ -97,6 +97,14 @@ describe('RecordingsPage coverage boost', () => {
       expect(lastParams()[0]).toBe(1);
     });
 
+    it('sends the internal source filter', async () => {
+      await renderPage();
+
+      fireEvent.click(screen.getByRole('button', { name: 'Internal' }));
+
+      await waitFor(() => expect(lastParams()[2].source).toBe('internal'));
+    });
+
     it('sends the date range as UTC day boundaries', async () => {
       await renderPage();
 

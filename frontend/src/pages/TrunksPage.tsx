@@ -178,6 +178,9 @@ const emptySettings: SystemSettings = {
   outbound_country_code: '31',
   outbound_international_prefix: '00',
   outbound_wait_audio: 'ringback',
+  outbound_min_number_length: 0,
+  outbound_allowed_short_numbers: '112',
+  record_internal_calls: false,
 };
 
 function toForm(item: SipTrunkItem | null): TrunkFormState {
