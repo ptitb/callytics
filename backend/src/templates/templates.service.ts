@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 import {
@@ -10,6 +10,7 @@ import {
   ParsedFlowDocument,
 } from '../flows/flow-document';
 import { FlowsService } from '../flows/flows.service';
+import { CreateTemplateDto } from './dto/create-template.dto';
 
 const REFERENCE_TABLES: Record<ConfigReferenceKind, string> = {
   'audio file': 'audio_files',
@@ -111,7 +112,97 @@ export class TemplatesService {
       .map(({ flowName, reference }) => formatMissingReferenceWarning(reference, flowName));
   }
 
+  /**
+   * Saves a snapshot of a flow's current version (including its submenus) as a new template.
+   * The source flow is not modified. The copy goes through the same export and import path as
+   * "Import JSON", so it behaves like an imported flow, and is flagged as template in the same
+   * transaction.
+   */
+  async createTemplate(dto: CreateTemplateDto): Promise<{ id: number; name: string }> {
+    const rows: Array<{ is_template: boolean }> = await this.dataSource.query(
+      `SELECT is_template FROM call_flows WHERE id = $1 LIMIT 1`,
+      [dto.flowId],
+    );
+    if (!rows[0]) {
+      throw new NotFoundException(`Flow ${dto.flowId} not found`);
+    }
+    if (rows[0].is_template) {
+      throw new BadRequestException(`Flow ${dto.flowId} is already a template`);
+    }
+
+    const document = parseFlowDocument(await this.flowsService.exportFlow(dto.flowId));
+    const name = dto.name?.trim() || document.name;
+    const category = dto.category?.trim() || null;
+    const description = dto.description?.trim() || null;
+
+    return this.dataSource.transaction(async (manager) => {
+      const created = await this.flowsService.createFromDocument(manager, { ...document, name });
+      await manager.query(
+        `
+          UPDATE call_flows
+          SET is_template = true,
+              template_category = $2,
+              template_description = $3
+          WHERE id = $1
+        `,
+        [created.id, category, description],
+      );
+      return { id: created.id, name: created.name };
+    });
+  }
+
+  /** Deletes a template and its submenus. Regular flows cannot be deleted through this method. */
+  async deleteTemplate(templateId: number): Promise<{ id: number; deleted: true }> {
+    const rows = await this.dataSource.query(
+      `SELECT id FROM call_flows WHERE id = $1 AND is_template = true LIMIT 1`,
+      [templateId],
+    );
+    if (!rows[0]) {
+      throw new NotFoundException(`Template ${templateId} not found`);
+    }
+    const result = await this.flowsService.remove(templateId);
+    return result.data;
+  }
+
+  /**
+   * Creates a new draft flow named "<template name> (copy)" from a template.
+   *
+   * Templates with submenus go through the export and import path of "Import JSON" so the whole
+   * tree is copied. Templates without submenus (including the bundled ones, whose configs predate
+   * the import validation) are copied row by row.
+   */
   async importTemplate(templateId: number): Promise<{ id: number; name: string }> {
+    const rows: Array<{ name: string | null; has_submenus: boolean }> = await this.dataSource.query(
+      `
+        SELECT
+          cf.name,
+          EXISTS (SELECT 1 FROM call_flows child WHERE child.parent_flow_id = cf.id) AS has_submenus
+        FROM call_flows cf
+        WHERE cf.id = $1
+          AND cf.is_template = true
+        LIMIT 1
+      `,
+      [templateId],
+    );
+    const template = rows[0];
+    if (!template) {
+      throw new NotFoundException(`Template ${templateId} not found`);
+    }
+    if (!template.has_submenus) {
+      return this.importTemplateWithoutSubmenus(templateId);
+    }
+
+    const document = parseFlowDocument(await this.flowsService.exportFlow(templateId));
+    const copyName = `${template.name || 'Template'} (copy)`;
+
+    return this.dataSource.transaction(async (manager) => {
+      const created = await this.flowsService.createFromDocument(manager, { ...document, name: copyName });
+      await manager.query(`UPDATE call_flows SET status = 'draft' WHERE id = $1`, [created.id]);
+      return created;
+    });
+  }
+
+  private async importTemplateWithoutSubmenus(templateId: number): Promise<{ id: number; name: string }> {
     return this.dataSource.transaction(async (manager) => {
       const templateRows = await manager.query(
         `
