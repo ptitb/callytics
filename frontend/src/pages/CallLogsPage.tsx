@@ -367,7 +367,7 @@ export function CallLogsPage() {
         <div className={styles.filters}>
           <input
             className={styles.input}
-            placeholder="Search caller number"
+            placeholder="Search caller or called number"
             value={searchInput}
             onChange={(event) => setSearchInput(event.target.value)}
           />
@@ -408,7 +408,8 @@ export function CallLogsPage() {
           <table className={styles.table}>
             <thead>
               <tr>
-                <th>Caller</th>
+                <th>From</th>
+                <th>To</th>
                 <th>Direction</th>
                 <th>Flow</th>
                 <th>Campaign</th>
@@ -433,7 +434,7 @@ export function CallLogsPage() {
                 ))
               ) : data.length === 0 ? (
                 <tr>
-                  <td colSpan={10} className={styles.emptyState}>No call logs found.</td>
+                  <td colSpan={11} className={styles.emptyState}>No call logs found.</td>
                 </tr>
               ) : data.map((item) => {
                 const quality = qualityByCall[item.callUuid];
@@ -447,6 +448,7 @@ export function CallLogsPage() {
                     onClick={() => setTraceCallUuid(item.callUuid)}
                   >
                     <td className={styles.mono}>{item.callerNumber || '—'}</td>
+                    <td className={styles.mono}>{item.calleeNumber || '—'}</td>
                     <td className={styles.mono}>{item.direction || '—'}</td>
                     <td className={styles.flowName}>{item.flowName || '—'}</td>
                     <td className={styles.flowName}>{item.campaignName || '—'}</td>

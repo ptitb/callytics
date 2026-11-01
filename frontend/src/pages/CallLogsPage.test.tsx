@@ -30,6 +30,6 @@ describe('CallLogsPage', () => {
     renderWithRouter(<CallLogsPage />);
 
     await waitFor(() => expect(screen.getByRole('heading', { name: 'Call Logs' })).toBeInTheDocument());
-    expect(screen.getByPlaceholderText('Search caller number')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Search caller or called number')).toBeInTheDocument();
   });
 });

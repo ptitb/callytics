@@ -74,6 +74,7 @@ describe('CallLogsService', () => {
       {
         startedAt: '2026-04-17T10:00:00.000Z',
         callerNumber: '94770000000',
+        calleeNumber: '94112223333',
         direction: 'inbound',
         durationSeconds: 45,
         endReason: 'completed',
@@ -85,7 +86,18 @@ describe('CallLogsService', () => {
     const csv = await service.exportCsv({});
 
     expect(csv).toContain('17 Apr 2026, 15:30:00');
-    expect(csv).toContain('94770000000');
+    expect(csv).toContain('94770000000,94112223333');
+    expect(csv.split('\n')[0]).toContain('caller ID,called number');
     expect(csv).not.toContain('2026-04-17T10:00:00.000Z');
+  });
+
+  it('matches the search term against caller and callee numbers', async () => {
+    mockDataSource.query.mockResolvedValueOnce([]);
+
+    await service.exportCsv({ search: ' 3333 ' });
+
+    const [sql, queryParams] = mockDataSource.query.mock.calls[0];
+    expect(sql).toContain('cl.caller_number ILIKE $1 OR cl.callee_number ILIKE $1');
+    expect(queryParams).toEqual(['%3333%']);
   });
 });

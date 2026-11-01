@@ -69,7 +69,9 @@ export class CallLogsService {
 
     if (params.search?.trim()) {
       queryParams.push(`%${params.search.trim()}%`);
-      whereParts.push(`cl.caller_number ILIKE $${queryParams.length}`);
+      whereParts.push(
+        `(cl.caller_number ILIKE $${queryParams.length} OR cl.callee_number ILIKE $${queryParams.length})`,
+      );
     }
 
     if (params.endReason?.trim()) {
@@ -206,6 +208,7 @@ export class CallLogsService {
         SELECT
           cl.started_at AS "startedAt",
           cl.caller_number AS "callerNumber",
+          cl.callee_number AS "calleeNumber",
           cl.direction AS "direction",
           cl.duration_seconds AS "durationSeconds",
           cl.end_reason AS "endReason",
@@ -224,6 +227,7 @@ export class CallLogsService {
     const header = [
       'call date/time',
       'caller ID',
+      'called number',
       'direction',
       'duration seconds',
       'status',
@@ -236,6 +240,7 @@ export class CallLogsService {
       const cols = [
         startedAtDisplay,
         row.callerNumber ? String(row.callerNumber) : '',
+        row.calleeNumber ? String(row.calleeNumber) : '',
         row.direction ? String(row.direction) : '',
         row.durationSeconds === null || row.durationSeconds === undefined ? '' : String(Number(row.durationSeconds)),
         row.endReason ? String(row.endReason) : 'unknown',
