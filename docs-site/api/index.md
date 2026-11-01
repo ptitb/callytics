@@ -372,8 +372,14 @@ Description: Delete contact number.
 `GET /templates`
 Description: List flow templates.
 
+`POST /templates`
+Description: Save a snapshot of an existing flow (current version, including submenus) as a new template. Body: `{ "flowId", "name"?, "category"?, "description"? }` with `name` up to 120, `category` up to 60 and `description` up to 500 characters. `name` defaults to the flow name. The original flow is not changed. Returns `{ "data": { "id", "name" } }`; 404 for an unknown flow, 400 if the flow already is a template.
+
+`DELETE /templates/:id`
+Description: Delete a template and its submenus. Returns 404 for ids that are not templates.
+
 `POST /templates/:id/import`
-Description: Import template into flows.
+Description: Import template into flows (new draft flow named "<name> (copy)", including submenus).
 
 `POST /templates/import`
 Description: Create a flow from a JSON document in the body (export format, a minimal `{ name, nodes, edges }` document, or the response of `GET /flows/:id`). Unknown fields such as ids are ignored. The flow and all its submenus are created in one transaction; invalid documents return 400 with the reason. Returns `{ "data": { "id", "name", "warnings" } }`, where `warnings` lists references to audio files, trunks, queues, operators or extensions that do not exist on this installation.

@@ -23,6 +23,9 @@ A flow can be exported as a JSON file and imported again on the same or another 
 
 - **Export:** use `export json` in the flow list or in the flow editor toolbar. The file contains the last saved version of the flow, including all nested submenus. Unsaved changes in the editor are not exported. Exporting a submenu directly produces a standalone flow without its parent link.
 - **Import:** open Configure > Templates, choose `Import JSON`, then select a `.json` file (or drop it on the panel) or paste the JSON. The import always creates a new flow, so duplicate names are allowed. If the document has no `name`, the flow is called "Imported Flow". The whole import is one step: if any part is invalid, nothing is created.
+- **Save as template:** use `save as template` in the flow list, then enter a name (defaults to the flow name), an optional category and an optional description. This stores a snapshot of the last saved version, including all nested submenus, on Configure > Templates. The original flow is not changed, and later edits to it do not affect the template.
+- **Use a template:** `Import` on the Templates page creates a new draft flow named "<name> (copy)" from the template, including its submenus.
+- **Delete a template:** use `Delete` on the Templates page. This removes the template and its submenus only. Flows created from it are not affected. Regular flows cannot be deleted from the Templates page.
 - **Accepted input:** files exported by Callytics, the minimal example below, and the response of `GET /flows/:id`. Fields that are not part of the format, such as database ids, are ignored.
 
 ### Format
