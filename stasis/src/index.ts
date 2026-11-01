@@ -36,6 +36,7 @@ import { resolveAudioMediaPath } from "./audioResolver";
 import { formatDialNumber } from "./lib/formatDialNumber";
 import {
   extractDialedNumber,
+  isOutboundNumberAllowed,
   normalizeOutboundNumber,
   parseOutboundNumberSettings,
   type OutboundNumberSettings,
@@ -46,6 +47,11 @@ import {
   stopOutboundWaitAudio,
   type OutboundWaitAudio,
 } from "./lib/outboundWaitAudio";
+import {
+  isEndpointUnavailable,
+  parseInternalCallArgs,
+  resolveInternalHangupReason,
+} from "./lib/internalCall";
 import { waitForPlaybackFinished } from "./lib/playback";
 import { resolveStasisChannel } from "./lib/ariChannel";
 import { closeRedisConnections, getPublisher, getSubscriber } from "./redis";
@@ -201,6 +207,7 @@ interface TestPlaybackChannel {
 interface DirectOutboundSettingsResponse {
   default_outbound_trunk_id: number | null;
   record_outbound_calls: boolean;
+  record_internal_calls: boolean;
   numberSettings: OutboundNumberSettings;
   waitAudio: OutboundWaitAudio;
 }
@@ -220,17 +227,26 @@ interface DirectOutboundTrunkResponse {
   createdAt: string;
 }
 
+/**
+ * A call that Stasis places on behalf of an extension: "outbound" goes out through the
+ * default trunk, "internal" rings another extension. Both share the same lifecycle.
+ */
+type DirectCallDirection = "outbound" | "internal";
+
 interface DirectOutboundActiveCall {
   callId: string;
+  direction: DirectCallDirection;
   inboundChannelId: string;
   outboundChannelId: string | null;
   bridgeId: string | null;
-  trunkId: number;
+  /** Null for internal calls and for calls blocked before a trunk was chosen. */
+  trunkId: number | null;
   callerId: string;
   destination: string;
   startedAt: Date;
   answeredAt: Date | null;
-  recordOutboundCalls: boolean;
+  /** Whether this call is recorded (record_outbound_calls or record_internal_calls). */
+  record: boolean;
   /** Audio the extension hears until the outbound leg answers. */
   waitAudio: OutboundWaitAudio;
   recording: {
@@ -267,6 +283,9 @@ interface DirectOutboundAriClient {
     create: (params: { type: string; name?: string }) => Promise<{ id: string }>;
     addChannel: (params: { bridgeId: string; channel: string }) => Promise<void>;
     destroy: (params: { bridgeId: string }) => Promise<void>;
+  };
+  endpoints?: {
+    get: (params: { tech: string; resource: string }) => Promise<{ state?: string }>;
   };
 }
 
@@ -372,6 +391,7 @@ async function fetchDirectOutboundSettings(): Promise<DirectOutboundSettingsResp
       ? settings.default_outbound_trunk_id
       : null,
     record_outbound_calls: Boolean(settings.record_outbound_calls),
+    record_internal_calls: Boolean(settings.record_internal_calls),
     numberSettings: parseOutboundNumberSettings(settings),
     waitAudio: parseOutboundWaitAudio(settings),
   };
@@ -408,11 +428,12 @@ async function createDirectOutboundBridge(
   ariClientRaw: unknown,
   inboundChannelId: string,
   outboundChannelId: string,
+  direction: DirectCallDirection,
 ): Promise<{ id: string }> {
   const ariClient = ariClientRaw as DirectOutboundAriClient;
   const bridge = await ariClient.bridges.create({
     type: "mixing,dtmf_events",
-    name: `direct-outbound-${inboundChannelId}`,
+    name: `${direction}-call-${inboundChannelId}`,
   });
   await ariClient.bridges.addChannel({ bridgeId: bridge.id, channel: inboundChannelId });
   await ariClient.bridges.addChannel({ bridgeId: bridge.id, channel: outboundChannelId });
@@ -435,14 +456,14 @@ async function publishDirectOutboundStarted(call: DirectOutboundActiveCall): Pro
     type: "started",
     caller: call.callerId,
     callerId: call.callerId,
-    direction: "outbound",
+    direction: call.direction,
     destination: call.destination,
     startedAt,
     answeredAt: null,
     endedAt: null,
     duration: null,
     trunkId: call.trunkId,
-    recorded: call.recordOutboundCalls,
+    recorded: call.record,
   });
 }
 
@@ -457,14 +478,14 @@ async function publishDirectOutboundFailed(
     type: "failed",
     caller: call.callerId,
     callerId: call.callerId,
-    direction: "outbound",
+    direction: call.direction,
     destination: call.destination,
     failureReason,
     answeredAt: call.answeredAt ? call.answeredAt.toISOString() : null,
     endedAt: endedAt.toISOString(),
     duration: computeDirectOutboundDurationSeconds(call, endedAt),
     trunkId: call.trunkId,
-    recorded: call.recordOutboundCalls,
+    recorded: call.record,
   });
 }
 
@@ -478,13 +499,13 @@ async function publishDirectOutboundEnded(
     type: "ended",
     caller: call.callerId,
     callerId: call.callerId,
-    direction: "outbound",
+    direction: call.direction,
     destination: call.destination,
     answeredAt: call.answeredAt ? call.answeredAt.toISOString() : null,
     endedAt: endedAt.toISOString(),
     duration: computeDirectOutboundDurationSeconds(call, endedAt),
     trunkId: call.trunkId,
-    recorded: call.recordOutboundCalls,
+    recorded: call.record,
   });
 }
 
@@ -519,7 +540,7 @@ async function persistDirectOutboundRecording(call: DirectOutboundActiveCall): P
       callId: call.callId,
       channelId: call.inboundChannelId,
       flowId: null,
-      recordingType: "outbound",
+      recordingType: call.direction,
       remoteNumber: call.destination,
       operatorLabel: call.callerId || null,
       fileName: call.recording.fileName,
@@ -575,7 +596,7 @@ async function cleanupDirectOutboundCall(
 
   if (call.answeredAt) {
     await publishDirectOutboundEnded(call, endedAt).catch((error) => {
-      stasisLogger.error("[direct-outbound] publish ended failed:", error);
+      stasisLogger.error(`[${call.direction}-call] publish ended failed:`, error);
     });
   } else {
     await publishDirectOutboundFailed(
@@ -583,13 +604,154 @@ async function cleanupDirectOutboundCall(
       endedAt,
       failureReason || "call ended before answer",
     ).catch((error) => {
-      stasisLogger.error("[direct-outbound] publish failed failed:", error);
+      stasisLogger.error(`[${call.direction}-call] publish failed failed:`, error);
     });
   }
 
   await persistDirectOutboundRecording(call).catch((error) => {
-    stasisLogger.error("[direct-outbound] persist recording failed:", error);
+    stasisLogger.error(`[${call.direction}-call] persist recording failed:`, error);
   });
+}
+
+function createDirectCall(params: {
+  channelId: string;
+  direction: DirectCallDirection;
+  trunkId: number | null;
+  callerId: string;
+  destination: string;
+  record: boolean;
+  waitAudio: OutboundWaitAudio;
+}): DirectOutboundActiveCall {
+  const call: DirectOutboundActiveCall = {
+    callId: params.channelId,
+    direction: params.direction,
+    inboundChannelId: params.channelId,
+    outboundChannelId: null,
+    bridgeId: null,
+    trunkId: params.trunkId,
+    callerId: params.callerId,
+    destination: params.destination,
+    startedAt: new Date(),
+    answeredAt: null,
+    record: params.record,
+    waitAudio: params.waitAudio,
+    recording: null,
+    cleanupStarted: false,
+  };
+  trackDirectOutboundCallChannel(call, call.inboundChannelId);
+  return call;
+}
+
+/** Starts the waiting audio for the caller and announces the call. */
+async function startDirectCall(ariClientRaw: unknown, call: DirectOutboundActiveCall): Promise<void> {
+  // The extension's channel is not answered yet (nothing in this path answers it before the
+  // other leg does), so ringing makes Asterisk send 180 Ringing to the phone.
+  try {
+    await startOutboundWaitAudio(
+      (ariClientRaw as DirectOutboundAriClient).channels,
+      call.inboundChannelId,
+      call.waitAudio,
+      DIRECT_OUTBOUND_MOH_CLASS,
+    );
+  } catch (error) {
+    stasisLogger.error(`[${call.direction}-call] ${call.waitAudio} start failed:`, error);
+  }
+
+  await publishDirectOutboundStarted(call).catch((error) => {
+    stasisLogger.error(`[${call.direction}-call] publish started failed:`, error);
+  });
+}
+
+/**
+ * Originates the other leg, waits for it to answer and bridges it with the caller.
+ * Any failure ends the call through cleanupDirectOutboundCall.
+ */
+async function dialAndBridge(
+  ariClientRaw: unknown,
+  call: DirectOutboundActiveCall,
+  params: {
+    endpoint: string;
+    /** Caller ID the called party sees. */
+    legCallerId: string;
+    /** Called with the failed wait result to choose what the caller hears. */
+    failureHangupReason: (reason: string, detail?: string) => "congestion" | "no_answer" | "busy";
+  },
+): Promise<void> {
+  const token = `${call.direction}-${call.inboundChannelId}-${Date.now()}`;
+  const outboundChannelId = `${token}-leg`;
+  stasisLogger.log(
+    `[${call.direction}-call] originate endpoint=${params.endpoint} channelId=${outboundChannelId} timeoutMs=${DIRECT_OUTBOUND_TIMEOUT_MS}`,
+  );
+  const waitResult = await waitForDirectOutboundAnswer(
+    ariClientRaw as DirectOutboundAriClient,
+    stasisLogger,
+    {
+      token,
+      inboundChannelId: call.inboundChannelId,
+      outboundChannelId,
+      timeoutMs: DIRECT_OUTBOUND_TIMEOUT_MS,
+      originate: async () => {
+        const ariClient = ariClientRaw as DirectOutboundAriClient;
+        await ariClient.channels.originate({
+          endpoint: params.endpoint,
+          channelId: outboundChannelId,
+          app: ARI_APP,
+          appArgs: `direct-outbound,${token}`,
+          callerId: params.legCallerId,
+          timeout: Math.max(1, Math.ceil(DIRECT_OUTBOUND_TIMEOUT_MS / 1000)),
+        });
+      },
+    },
+  );
+
+  if (waitResult.answered === false) {
+    stasisLogger.warn(
+      `[${call.direction}-call] call ${call.callId} to ${call.destination} failed: ${waitResult.detail || waitResult.reason}`,
+    );
+    await cleanupDirectOutboundCall(
+      ariClientRaw,
+      call,
+      null,
+      waitResult.detail || waitResult.reason,
+      params.failureHangupReason(waitResult.reason, waitResult.detail),
+    );
+    return;
+  }
+
+  call.answeredAt = new Date();
+  call.outboundChannelId = waitResult.channel.id;
+  trackDirectOutboundCallChannel(call, call.outboundChannelId);
+
+  const ariChannels = (ariClientRaw as DirectOutboundAriClient).channels;
+  await stopOutboundWaitAudio(ariChannels, call.inboundChannelId, call.waitAudio);
+  if (call.waitAudio === "ringback") {
+    // Ringing leaves the channel unanswered, so answer it now that the other side picked up.
+    await ariChannels.answer?.({ channelId: call.inboundChannelId }).catch((error: unknown) => {
+      stasisLogger.warn(`[${call.direction}-call] answer failed: ${error instanceof Error ? error.message : error}`);
+    });
+  }
+
+  try {
+    const bridge = await createDirectOutboundBridge(
+      ariClientRaw,
+      call.inboundChannelId,
+      call.outboundChannelId,
+      call.direction,
+    );
+    call.bridgeId = bridge.id;
+
+    if (call.record) {
+      call.recording = await startBridgeRecording(call.bridgeId, call.callId);
+    }
+  } catch (error) {
+    stasisLogger.error(`[${call.direction}-call] bridge setup failed:`, error);
+    await cleanupDirectOutboundCall(
+      ariClientRaw,
+      call,
+      null,
+      error instanceof Error ? error.message : "bridge setup failed",
+    );
+  }
 }
 
 async function handleDirectOutboundDial(
@@ -627,6 +789,33 @@ async function handleDirectOutboundDial(
     return;
   }
 
+  if (!isOutboundNumberAllowed(dialedNumber, settings.numberSettings)) {
+    // Too short to be a real external number: log the attempt and play congestion.
+    stasisLogger.warn(
+      `[direct-outbound] blocked ${dialedNumber} from ${callerNumber}: shorter than ${settings.numberSettings.minLength} digits`,
+    );
+    const blockedCall = createDirectCall({
+      channelId: channel.id,
+      direction: "outbound",
+      trunkId: null,
+      callerId: callerNumber,
+      destination: dialedNumber,
+      record: false,
+      waitAudio: settings.waitAudio,
+    });
+    await publishDirectOutboundStarted(blockedCall).catch((error) => {
+      stasisLogger.error("[direct-outbound] publish started failed:", error);
+    });
+    await cleanupDirectOutboundCall(
+      ariClientRaw,
+      blockedCall,
+      null,
+      `number too short (minimum ${settings.numberSettings.minLength} digits)`,
+      "congestion",
+    );
+    return;
+  }
+
   if (!trunk) {
     await channel.hangup().catch(() => undefined);
     return;
@@ -637,39 +826,16 @@ async function handleDirectOutboundDial(
     stasisLogger.log(`[direct-outbound] normalized dialed number ${dialedNumber} to ${destination}`);
   }
 
-  const call: DirectOutboundActiveCall = {
-    callId: channel.id,
-    inboundChannelId: channel.id,
-    outboundChannelId: null,
-    bridgeId: null,
+  const call = createDirectCall({
+    channelId: channel.id,
+    direction: "outbound",
     trunkId: trunk.id,
     callerId: callerNumber,
     destination,
-    startedAt: new Date(),
-    answeredAt: null,
-    recordOutboundCalls: settings.record_outbound_calls,
+    record: settings.record_outbound_calls,
     waitAudio: settings.waitAudio,
-    recording: null,
-    cleanupStarted: false,
-  };
-  trackDirectOutboundCallChannel(call, call.inboundChannelId);
-
-  // The extension's channel is not answered yet (nothing in this path answers it before the
-  // outbound leg does), so ringing makes Asterisk send 180 Ringing to the phone.
-  try {
-    await startOutboundWaitAudio(
-      (ariClientRaw as DirectOutboundAriClient).channels,
-      call.inboundChannelId,
-      call.waitAudio,
-      DIRECT_OUTBOUND_MOH_CLASS,
-    );
-  } catch (error) {
-    stasisLogger.error(`[direct-outbound] ${call.waitAudio} start failed:`, error);
-  }
-
-  await publishDirectOutboundStarted(call).catch((error) => {
-    stasisLogger.error("[direct-outbound] publish started failed:", error);
   });
+  await startDirectCall(ariClientRaw, call);
 
   const dialFormat = String(trunk.dialFormat || '{number}');
   const formattedDestination = formatDialNumber(destination, dialFormat);
@@ -680,81 +846,79 @@ async function handleDirectOutboundDial(
     return;
   }
 
-  const token = `direct-outbound-${call.inboundChannelId}-${Date.now()}`;
-  const outboundChannelId = `${token}-leg`;
-  const endpoint = `PJSIP/${formattedDestination}@trunk-${trunk.id}`;
-  stasisLogger.log(
-    `[direct-outbound] originate endpoint=${endpoint} channelId=${outboundChannelId} timeoutMs=${DIRECT_OUTBOUND_TIMEOUT_MS}`,
-  );
-  const waitResult = await waitForDirectOutboundAnswer(
-    ariClientRaw as DirectOutboundAriClient,
-    stasisLogger,
-    {
-      token,
-      inboundChannelId: call.inboundChannelId,
-      outboundChannelId,
-      timeoutMs: DIRECT_OUTBOUND_TIMEOUT_MS,
-      originate: async () => {
-        const ariClient = ariClientRaw as DirectOutboundAriClient;
-        await ariClient.channels.originate({
-          endpoint,
-          channelId: outboundChannelId,
-          app: ARI_APP,
-          appArgs: `direct-outbound,${token}`,
-          callerId: trunk.fromUser || "",
-          timeout: Math.max(1, Math.ceil(DIRECT_OUTBOUND_TIMEOUT_MS / 1000)),
-        });
-      },
-    },
-  );
+  await dialAndBridge(ariClientRaw, call, {
+    endpoint: `PJSIP/${formattedDestination}@trunk-${trunk.id}`,
+    legCallerId: trunk.fromUser || "",
+    failureHangupReason: (reason) => (reason === "timeout" ? "no_answer" : "congestion"),
+  });
+}
 
-  if (waitResult.answered === false) {
-    stasisLogger.warn(
-      `[direct-outbound] call ${call.callId} to ${destination} failed: ${waitResult.detail || waitResult.reason}`,
-    );
-    await cleanupDirectOutboundCall(
-      ariClientRaw,
-      call,
-      null,
-      waitResult.detail || waitResult.reason,
-      waitResult.reason === "timeout" ? "no_answer" : "congestion",
-    );
+/**
+ * Rings another extension for an extension that dialed its number. Only PJSIP
+ * extension endpoints are dialed here, never a trunk.
+ */
+async function handleInternalCall(
+  ariClientRaw: unknown,
+  event: {
+    channel?: {
+      caller?: { number?: string };
+    };
+  },
+  channel: {
+    id: string;
+    hangup: () => Promise<void>;
+  },
+  target: string,
+): Promise<void> {
+  const callerNumber = String(event.channel?.caller?.number || "unknown").trim() || "unknown";
+
+  let settings: DirectOutboundSettingsResponse;
+  try {
+    settings = await fetchDirectOutboundSettings();
+  } catch (error) {
+    stasisLogger.error("[internal-call] backend settings lookup failed:", error);
+    await channel.hangup().catch(() => undefined);
     return;
   }
 
-  call.answeredAt = new Date();
-  call.outboundChannelId = waitResult.channel.id;
-  trackDirectOutboundCallChannel(call, call.outboundChannelId);
+  const call = createDirectCall({
+    channelId: channel.id,
+    direction: "internal",
+    trunkId: null,
+    callerId: callerNumber,
+    destination: target,
+    record: settings.record_internal_calls,
+    waitAudio: settings.waitAudio,
+  });
 
-  const ariChannels = (ariClientRaw as DirectOutboundAriClient).channels;
-  await stopOutboundWaitAudio(ariChannels, call.inboundChannelId, call.waitAudio);
-  if (call.waitAudio === "ringback") {
-    // Ringing leaves the channel unanswered, so answer it now that the other side picked up.
-    await ariChannels.answer?.({ channelId: call.inboundChannelId }).catch((error: unknown) => {
-      stasisLogger.warn(`[direct-outbound] answer failed: ${error instanceof Error ? error.message : error}`);
+  if (target === callerNumber) {
+    await publishDirectOutboundStarted(call).catch((error) => {
+      stasisLogger.error("[internal-call] publish started failed:", error);
     });
+    await cleanupDirectOutboundCall(ariClientRaw, call, null, "extension dialed itself", "busy");
+    return;
   }
 
-  try {
-    const bridge = await createDirectOutboundBridge(
-      ariClientRaw,
-      call.inboundChannelId,
-      call.outboundChannelId,
-    );
-    call.bridgeId = bridge.id;
-
-    if (call.recordOutboundCalls) {
-      call.recording = await startBridgeRecording(call.bridgeId, call.callId);
-    }
-  } catch (error) {
-    stasisLogger.error("[direct-outbound] bridge setup failed:", error);
-    await cleanupDirectOutboundCall(
-      ariClientRaw,
-      call,
-      null,
-      error instanceof Error ? error.message : "bridge setup failed",
-    );
+  // An extension without a registered contact cannot ring: fail now instead of after the timeout.
+  const ariClient = ariClientRaw as DirectOutboundAriClient;
+  const endpointState = await ariClient.endpoints
+    ?.get({ tech: "PJSIP", resource: target })
+    .then((endpoint) => endpoint.state)
+    .catch(() => undefined);
+  if (isEndpointUnavailable(endpointState)) {
+    await publishDirectOutboundStarted(call).catch((error) => {
+      stasisLogger.error("[internal-call] publish started failed:", error);
+    });
+    await cleanupDirectOutboundCall(ariClientRaw, call, null, "extension not registered", "congestion");
+    return;
   }
+
+  await startDirectCall(ariClientRaw, call);
+  await dialAndBridge(ariClientRaw, call, {
+    endpoint: `PJSIP/${target}`,
+    legCallerId: callerNumber,
+    failureHangupReason: resolveInternalHangupReason,
+  });
 }
 
 async function startBridgeRecording(
@@ -1152,6 +1316,17 @@ async function start(): Promise<void> {
           }
           resolveCallbackWaiter(callbackId, "customer", channel);
           stasisLogger.log(`Callback customer leg entered Stasis: ${channel.id} callback=${callbackId}`);
+          return;
+        }
+
+        // Internal calls (extension to extension) are routed here from callytics-extensions only.
+        if (event.args?.[0] === "internal") {
+          const target = parseInternalCallArgs(event.args);
+          if (event.channel?.dialplan?.context !== EXTENSIONS_CONTEXT || !target) {
+            await channel.hangup().catch(() => undefined);
+            return;
+          }
+          await handleInternalCall(client, event, channel, target);
           return;
         }
 

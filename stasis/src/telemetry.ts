@@ -38,7 +38,7 @@ export interface CallEvent {
   type: 'started' | 'failed' | 'ended';
   caller: string;
   callerId?: string;
-  direction?: 'inbound' | 'outbound';
+  direction?: 'inbound' | 'outbound' | 'internal';
   destination?: string;
   flowId?: number;
   flowVersionId?: number;

@@ -5,13 +5,30 @@ export interface OutboundNumberSettings {
   countryCode: string;
   /** Prefix that marks an international number, for example 00. */
   internationalPrefix: string;
+  /** Numbers with fewer digits are never dialed out. 0 disables the check. */
+  minLength: number;
+  /** Short numbers (for example emergency numbers) that are allowed despite minLength. */
+  allowedShortNumbers: string[];
 }
 
 export const DEFAULT_OUTBOUND_NUMBER_SETTINGS: OutboundNumberSettings = {
   normalizeE164: true,
   countryCode: '31',
   internationalPrefix: '00',
+  minLength: 0,
+  allowedShortNumbers: ['112'],
 };
+
+/** Splits a comma separated list of numbers; entries that are not plain digits are dropped. */
+export function parseShortNumberList(value: unknown): string[] | null {
+  if (typeof value !== 'string') {
+    return null;
+  }
+  return value
+    .split(',')
+    .map((entry) => entry.trim())
+    .filter((entry) => /^\d+$/.test(entry));
+}
 
 /**
  * Reads the outbound_* keys of the backend settings. Missing or invalid
@@ -28,7 +45,27 @@ export function parseOutboundNumberSettings(raw: Record<string, unknown> | undef
     internationalPrefix: /^\d{1,4}$/.test(internationalPrefix)
       ? internationalPrefix
       : DEFAULT_OUTBOUND_NUMBER_SETTINGS.internationalPrefix,
+    minLength: typeof raw?.outbound_min_number_length === 'number'
+      && Number.isInteger(raw.outbound_min_number_length)
+      && raw.outbound_min_number_length >= 0
+      ? raw.outbound_min_number_length
+      : DEFAULT_OUTBOUND_NUMBER_SETTINGS.minLength,
+    allowedShortNumbers: parseShortNumberList(raw?.outbound_allowed_short_numbers)
+      ?? DEFAULT_OUTBOUND_NUMBER_SETTINGS.allowedShortNumbers,
   };
+}
+
+/**
+ * Tells whether a dialed number may leave through a trunk. A number with fewer
+ * digits than minLength is blocked unless it is in the allowed short numbers.
+ * Checked on the number as dialed, before E.164 conversion.
+ */
+export function isOutboundNumberAllowed(dialedNumber: string, settings: OutboundNumberSettings): boolean {
+  if (settings.minLength <= 0) {
+    return true;
+  }
+  const digits = dialedNumber.replace(/\D/g, '');
+  return digits.length >= settings.minLength || settings.allowedShortNumbers.includes(digits);
 }
 
 /**

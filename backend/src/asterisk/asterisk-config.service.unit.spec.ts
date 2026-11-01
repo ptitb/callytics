@@ -157,7 +157,7 @@ describe("AsteriskConfigService", () => {
     expect(config).toContain("server_uri = sip:provider.com");
   });
 
-  it("buildInboundRoutesConfig writes direct extension dialing before DID routes", () => {
+  it("buildInboundRoutesConfig writes extension entries before DID routes", () => {
     const content = (service as any).buildInboundRoutesConfig(
       [{ did: "1234" }],
       [{ username: "1000" }, { username: "1001" }],
@@ -166,6 +166,7 @@ describe("AsteriskConfigService", () => {
     expect(content).toContain("exten => 1000,1,Dial(PJSIP/1000,30)");
     expect(content).toContain("exten => 1000,n,Hangup()");
     expect(content).toContain("exten => 1001,1,Dial(PJSIP/1001,30)");
+    expect(content).toContain("exten => 1000,1,Stasis(callytics,internal,1000)");
     expect(content).toContain("exten => 1234,1,Stasis(callytics)");
     expect(content.indexOf("exten => 1000,1,Dial(PJSIP/1000,30)")).toBeLessThan(
       content.indexOf("exten => 1234,1,Stasis(callytics)"),
@@ -195,9 +196,26 @@ describe("AsteriskConfigService", () => {
       expect(inbound).not.toContain("Goto");
     });
 
+    it("routes extension numbers from extensions into Stasis as internal calls", () => {
+      const extensions = section(build(true), "callytics-extensions");
+      expect(extensions).toContain("exten => 1000,1,Stasis(callytics,internal,1000)");
+      expect(extensions).toContain("exten => 1000,n,Hangup()");
+      expect(extensions).not.toContain("Dial(PJSIP/1000");
+    });
+
+    it("does not route trunk calls to extensions through the internal path", () => {
+      expect(section(build(true), "callytics-inbound")).not.toContain("internal");
+    });
+
+    it("keeps the internal extension entries ahead of the patterns", () => {
+      const extensions = section(build(true), "callytics-extensions");
+      expect(extensions.indexOf("exten => 1000,1,Stasis(callytics,internal")).toBeLessThan(
+        extensions.indexOf("exten => _X.,1"),
+      );
+    });
+
     it("sends other numbers to the # path when dialing without # is on", () => {
       const extensions = section(build(true), "callytics-extensions");
-      expect(extensions).toContain("exten => 1000,1,Dial(PJSIP/1000,30)");
       expect(extensions).toContain("exten => 1234,1,Stasis(callytics)");
       expect(extensions).toContain("exten => _#.,1,Stasis(callytics)");
       expect(extensions).toContain("exten => _X.,1,Goto(callytics-extensions,#${EXTEN},1)");

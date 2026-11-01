@@ -1,5 +1,6 @@
 import {
   extractDialedNumber,
+  isOutboundNumberAllowed,
   DEFAULT_OUTBOUND_NUMBER_SETTINGS,
   normalizeOutboundNumber,
   parseOutboundNumberSettings,
@@ -60,7 +61,29 @@ describe('parseOutboundNumberSettings', () => {
       outbound_normalize_e164: false,
       outbound_country_code: '44',
       outbound_international_prefix: '011',
-    })).toEqual({ normalizeE164: false, countryCode: '44', internationalPrefix: '011' });
+    })).toEqual({
+      ...defaults,
+      normalizeE164: false,
+      countryCode: '44',
+      internationalPrefix: '011',
+    });
+  });
+
+  it('reads the short number settings', () => {
+    expect(parseOutboundNumberSettings({
+      outbound_min_number_length: 6,
+      outbound_allowed_short_numbers: '112, 911,abc,',
+    })).toMatchObject({ minLength: 6, allowedShortNumbers: ['112', '911'] });
+    expect(parseOutboundNumberSettings({ outbound_allowed_short_numbers: '' }).allowedShortNumbers).toEqual([]);
+  });
+
+  it('ignores invalid short number settings', () => {
+    expect(parseOutboundNumberSettings({
+      outbound_min_number_length: '6',
+      outbound_allowed_short_numbers: 112,
+    })).toMatchObject({ minLength: 0, allowedShortNumbers: ['112'] });
+    expect(parseOutboundNumberSettings({ outbound_min_number_length: -1 }).minLength).toBe(0);
+    expect(parseOutboundNumberSettings({ outbound_min_number_length: 2.5 }).minLength).toBe(0);
   });
 
   it('falls back to the defaults for missing or invalid values', () => {
@@ -70,6 +93,36 @@ describe('parseOutboundNumberSettings', () => {
       outbound_country_code: '+31',
       outbound_international_prefix: 'abc',
     })).toEqual(defaults);
+  });
+});
+
+describe('isOutboundNumberAllowed', () => {
+  const strict = { ...defaults, minLength: 6, allowedShortNumbers: ['112', '1234'] };
+
+  it('allows everything when the minimum length is 0', () => {
+    expect(isOutboundNumberAllowed('1', defaults)).toBe(true);
+    expect(isOutboundNumberAllowed('0', defaults)).toBe(true);
+  });
+
+  it('blocks numbers shorter than the minimum length', () => {
+    expect(isOutboundNumberAllowed('201', strict)).toBe(false);
+    expect(isOutboundNumberAllowed('12345', strict)).toBe(false);
+  });
+
+  it('allows numbers of at least the minimum length', () => {
+    expect(isOutboundNumberAllowed('123456', strict)).toBe(true);
+    expect(isOutboundNumberAllowed('0612345678', strict)).toBe(true);
+    expect(isOutboundNumberAllowed('+442071234567', strict)).toBe(true);
+  });
+
+  it('allows the listed short numbers', () => {
+    expect(isOutboundNumberAllowed('112', strict)).toBe(true);
+    expect(isOutboundNumberAllowed('1234', strict)).toBe(true);
+    expect(isOutboundNumberAllowed('113', strict)).toBe(false);
+  });
+
+  it('counts digits only', () => {
+    expect(isOutboundNumberAllowed('+1 13', strict)).toBe(false);
   });
 });
 
