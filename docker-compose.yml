@@ -145,9 +145,11 @@ services:
     build:
       context: .
       dockerfile: ./docker/web/Dockerfile
+      args:
+        # Baked into the bundle at build time; rebuild the frontend after changing it.
+        VITE_DISPLAY_TIMEZONE: ${VITE_DISPLAY_TIMEZONE:-UTC}
     network_mode: "host"
     environment:
-      VITE_DISPLAY_TIMEZONE: ${VITE_DISPLAY_TIMEZONE:-UTC}
       UPLOAD_MAX_MB: ${UPLOAD_MAX_MB:-100}
       WEB_BIND_ADDR: ${WEB_BIND_ADDR:-127.0.0.1}
     volumes:

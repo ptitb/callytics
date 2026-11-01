@@ -39,6 +39,7 @@ Environment variables below follow repository `.env.example`. Secrets are genera
 | `PUID` | `1000` | No | WireGuard container runtime UID (linuxserver image setting). |
 | `PGID` | `1000` | No | WireGuard container runtime GID (linuxserver image setting). |
 | `TZ` | `UTC` | No | Container timezone (used by WireGuard container and schedule context). |
+| `VITE_DISPLAY_TIMEZONE` | `UTC` | No | IANA timezone the web UI uses to display times. Baked into the frontend at build time, so after changing it run `docker compose up -d --build frontend`. |
 
 ## Notes
 
