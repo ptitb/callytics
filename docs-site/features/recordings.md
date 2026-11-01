@@ -16,6 +16,7 @@ Recording only happens on bridged calls. The following call paths support record
 - **Queue node** — recording starts when `record_call` is enabled on the node
 - **Hunt Group node** — recording starts when `record_call` is enabled on the node
 - **Direct outbound calls** — recorded when `record_outbound_calls` is enabled in Settings
+- **Internal calls** (extension to extension) — recorded when "Record internal calls" is enabled in Settings > Outbound dialing (off by default). These recordings have source `internal` on the Recordings page
 
 IVR audio playback from the Play Audio node is never recorded, regardless of any recording settings elsewhere in the flow.
 

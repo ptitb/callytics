@@ -50,9 +50,17 @@ Callytics supports direct outbound dialing from any registered softphone without
    - Dialing `#` followed by the number (for example `#94771234567`) always dials out as well
    - Settings > Outbound dialing controls this: turn off "Dial external numbers without #" to require the `#` prefix, turn off "Convert dialed numbers to E.164" to send the number as dialed, and set the country code (default `31`) and international prefix (default `00`)
 
-5. You will hear music on hold immediately while Callytics connects the call through your trunk.
+   - Settings > Outbound dialing also has a "Minimum length for outbound numbers" (default `0`, off). Numbers with fewer digits are never sent to the trunk, the call fails and shows in Call Logs as failed. Numbers in "Always allowed short numbers" (default `112`, comma separated) are exempt, so emergency numbers keep working
+
+5. You will hear the ringback tone (or music on hold, depending on the Settings > Outbound dialing option) immediately while Callytics connects the call through your trunk.
 
 6. Go to Call Logs in the dashboard — the call will appear with direction set to `outbound`.
+
+## Calling another extension
+
+Dial the extension number from a registered softphone. The call is routed through Callytics, rings the other extension (30 seconds, then it fails) and appears in Call Logs with direction `internal`, the calling extension as caller and the dialed extension as called number. Use the Internal pill in Call Logs to show only these calls. If the other extension is not registered, busy or does not answer, the call fails and is logged as failed. Internal calls never go through a trunk.
+
+Internal calls are not recorded unless you turn on "Record internal calls" in Settings > Outbound dialing.
 
 > This works over the relay too: your softphone connects to the VPS, dials the number, and the outbound call goes out through your trunk on the Callytics host. No direct internet path needed from your phone.
 

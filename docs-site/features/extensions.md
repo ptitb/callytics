@@ -22,3 +22,4 @@ WebRTC extensions are meant for the built-in browser softphone, not Zoiper or Li
 - Extension registration status in diagnostics
 - Softphone support
 - Operator login flow support
+- Extension-to-extension calls are routed through Stasis, so they appear in Call Logs as `internal` calls and can optionally be recorded
