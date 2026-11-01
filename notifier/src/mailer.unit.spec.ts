@@ -33,7 +33,7 @@ describe('createMailer', () => {
 
   it('fails when the transport fails', async () => {
     const transport = nodemailer.createTransport({ jsonTransport: true });
-    jest.spyOn(transport, 'sendMail').mockRejectedValue(new Error('connect ECONNREFUSED'));
+    jest.spyOn(transport, 'sendMail').mockImplementation(() => Promise.reject(new Error('connect ECONNREFUSED')));
     await expect(createMailer(testConfig(), transport).send({ subject: 's', text: 't', html: 'h' })).rejects.toThrow('ECONNREFUSED');
   });
 });

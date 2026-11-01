@@ -16,12 +16,12 @@
     "start": "node dist/index.js"
   },
   "dependencies": {
-    "nodemailer": "^7.0.0"
+    "nodemailer": "^10.3.1"
   },
   "devDependencies": {
     "@types/jest": "^30.0.0",
     "@types/node": "^22.5.4",
-    "@types/nodemailer": "^7.0.0",
+    "@types/nodemailer": "^8.0.2",
     "jest": "^30.3.0",
     "ts-jest": "^29.4.9",
     "typescript": "^5.5.4"
