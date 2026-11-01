@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { Route, Routes } from 'react-router-dom';
 import axios from 'axios';
 import { TemplatesPage } from './TemplatesPage';
@@ -8,8 +8,9 @@ import { renderWithRouter } from '../test/renderWithRouter';
 
 vi.mock('../lib/api', () => ({
   listTemplates: vi.fn(),
-  getFlow: vi.fn(),
   importFlowDocument: vi.fn(),
+  importTemplate: vi.fn(),
+  deleteTemplate: vi.fn(),
 }));
 
 const MINIMAL_FLOW = {
@@ -134,5 +135,66 @@ describe('TemplatesPage JSON import', () => {
 
     expect(await screen.findByText(/^Invalid JSON:/)).toBeInTheDocument();
     expect(api.importFlowDocument).not.toHaveBeenCalled();
+  });
+});
+
+describe('TemplatesPage template actions', () => {
+  const template = {
+    id: 5,
+    name: 'Reception template',
+    description: null,
+    templateDescription: 'Menu with sales',
+    templateCategory: 'office',
+    nodeCount: 4,
+  };
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+    Object.defineProperty(window, 'innerWidth', { configurable: true, writable: true, value: 1440 });
+    vi.mocked(api.listTemplates).mockResolvedValue({ data: [template], total: 1 } as never);
+  });
+
+  it('deletes a template after confirmation and removes it from the list', async () => {
+    vi.mocked(api.deleteTemplate).mockResolvedValue({ data: { id: 5, deleted: true } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    expect(api.deleteTemplate).not.toHaveBeenCalled();
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+
+    await waitFor(() => expect(api.deleteTemplate).toHaveBeenCalledWith(5));
+    await waitFor(() => expect(screen.queryByText('Reception template')).not.toBeInTheDocument());
+  });
+
+  it('keeps the template when the confirmation is cancelled', async () => {
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(api.deleteTemplate).not.toHaveBeenCalled();
+    expect(screen.getByText('Reception template')).toBeInTheDocument();
+  });
+
+  it('shows the error and keeps the template when deleting fails', async () => {
+    vi.mocked(api.deleteTemplate).mockRejectedValue(apiValidationError('Template 5 not found'));
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Delete' }));
+
+    expect(await screen.findByText('Template 5 not found')).toBeInTheDocument();
+    expect(screen.getByText('Reception template')).toBeInTheDocument();
+  });
+
+  it('imports a template on the server and opens the new flow', async () => {
+    vi.mocked(api.importTemplate).mockResolvedValue({ data: { id: 12, name: 'Reception template (copy)' } });
+    renderPage();
+
+    fireEvent.click(await screen.findByRole('button', { name: 'Import' }));
+    fireEvent.click(within(screen.getByRole('dialog')).getByRole('button', { name: 'Import' }));
+
+    await waitFor(() => expect(api.importTemplate).toHaveBeenCalledWith(5));
+    expect(await screen.findByText('editor for flow')).toBeInTheDocument();
   });
 });

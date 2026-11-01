@@ -5,6 +5,7 @@ import { ErrorMessage } from '../components/common/ErrorMessage';
 import { PageLayout } from '../components/common/PageLayout';
 import { ConfirmDialog } from '../components/ConfirmDialog/ConfirmDialog';
 import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
+import { SaveAsTemplateDialog } from '../components/SaveAsTemplateDialog/SaveAsTemplateDialog';
 import { deleteFlow, listFlows } from '../lib/api';
 import { getApiError } from '../lib/apiError';
 import { downloadFlowExport } from '../lib/flowExport';
@@ -24,6 +25,7 @@ export function FlowsPage() {
   const [confirmId, setConfirmId] = useState<number | null>(null);
   const [deletedId, setDeletedId] = useState<number | null>(null);
   const [failedDeleteId, setFailedDeleteId] = useState<number | null>(null);
+  const [templateSource, setTemplateSource] = useState<FlowSummary | null>(null);
   const [page, setPage] = useState(1);
 
   const successTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -137,6 +139,7 @@ export function FlowsPage() {
                           <>
                             <button className={`${styles.secondaryButton} ${styles.editButton}`} onClick={() => navigate(`/flows/${flow.id}`)} type="button">edit</button>
                             <button className={`${styles.secondaryButton} ${styles.editButton}`} onClick={() => void handleExport(flow)} type="button">export json</button>
+                            <button className={`${styles.secondaryButton} ${styles.editButton}`} onClick={() => setTemplateSource(flow)} type="button">save as template</button>
                             <button className={`${styles.secondaryButton} ${styles.deleteButton}`} onClick={() => setConfirmId(flow.id)} type="button">delete</button>
                             {failedDeleteId === flow.id ? <div className={styles.failedText}>failed to delete</div> : null}
                           </>
@@ -154,6 +157,18 @@ export function FlowsPage() {
             onPageChange={setPage}
           />
         </div>
+      ) : null}
+      {templateSource ? (
+        <SaveAsTemplateDialog
+          open
+          flowId={templateSource.id}
+          flowName={templateSource.name}
+          onClose={() => setTemplateSource(null)}
+          onSaved={(templateName) => {
+            setTemplateSource(null);
+            showToast(`Saved "${templateName}" as template. Find it on the Templates page.`, 'success');
+          }}
+        />
       ) : null}
       <ConfirmDialog
         open={confirmId !== null}

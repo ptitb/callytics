@@ -159,6 +159,17 @@
   border-color: var(--accent);
 }
 
+.actionButtons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.deleteButton:hover {
+  color: var(--color-error);
+  border-color: var(--color-error);
+}
+
 .secondaryButton:disabled {
   opacity: 0.6;
   cursor: not-allowed;

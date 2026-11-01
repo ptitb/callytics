@@ -6,7 +6,7 @@ import { Loading } from '../components/common/Loading';
 import { PageLayout } from '../components/common/PageLayout';
 import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
 import { getApiError } from '../lib/apiError';
-import { getFlow, importFlowDocument, listTemplates } from '../lib/api';
+import { deleteTemplate, importFlowDocument, importTemplate, listTemplates } from '../lib/api';
 import { useWindowWidth } from '../hooks/useWindowWidth';
 import type { TemplateItem } from '../types';
 import styles from './TemplatesPage.module.css';
@@ -33,6 +33,8 @@ export function TemplatesPage() {
   const [errorText, setErrorText] = useState<string | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [pendingImportId, setPendingImportId] = useState<number | null>(null);
+  const [pendingDeleteId, setPendingDeleteId] = useState<number | null>(null);
+  const [deletingId, setDeletingId] = useState<number | null>(null);
   const [importJsonOpen, setImportJsonOpen] = useState(false);
   const [importJsonBusy, setImportJsonBusy] = useState(false);
   const [importJsonText, setImportJsonText] = useState('');
@@ -71,20 +73,26 @@ export function TemplatesPage() {
     setBusyId(id);
     setErrorText(null);
     try {
-      const response = await getFlow(String(id));
-      navigate('/flows/new', {
-        state: {
-          prefillTemplate: {
-            name: response.data.name,
-            nodes: response.data.nodes,
-            edges: response.data.edges,
-          },
-        },
-      });
+      // Created on the server so submenus are copied along with the flow.
+      const response = await importTemplate(id);
+      navigate(`/flows/${response.data.id}`);
     } catch (error) {
       setErrorText(getApiError(error, 'failed to import template'));
     } finally {
       setBusyId(null);
+    }
+  };
+
+  const handleDelete = async (id: number) => {
+    setDeletingId(id);
+    setErrorText(null);
+    try {
+      await deleteTemplate(id);
+      setItems((current) => current.filter((item) => item.id !== id));
+    } catch (error) {
+      setErrorText(getApiError(error, 'failed to delete template'));
+    } finally {
+      setDeletingId(null);
     }
   };
 
@@ -344,14 +352,24 @@ export function TemplatesPage() {
                         </td>
 
                         <td className={styles.actionsCell}>
-                          <button
-                            className={`${styles.secondaryButton} ${styles.importButton}`}
-                            disabled={busyId === item.id}
-                            onClick={() => setPendingImportId(item.id)}
-                            type="button"
-                          >
-                            {busyId === item.id ? 'Importing...' : 'Import'}
-                          </button>
+                          <div className={styles.actionButtons}>
+                            <button
+                              className={`${styles.secondaryButton} ${styles.importButton}`}
+                              disabled={busyId === item.id || deletingId === item.id}
+                              onClick={() => setPendingImportId(item.id)}
+                              type="button"
+                            >
+                              {busyId === item.id ? 'Importing...' : 'Import'}
+                            </button>
+                            <button
+                              className={`${styles.secondaryButton} ${styles.deleteButton}`}
+                              disabled={busyId === item.id || deletingId === item.id}
+                              onClick={() => setPendingDeleteId(item.id)}
+                              type="button"
+                            >
+                              {deletingId === item.id ? 'Deleting...' : 'Delete'}
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     ))
@@ -373,6 +391,21 @@ export function TemplatesPage() {
             }}
             open={pendingImportId !== null}
             title="Import Template"
+          />
+
+          <ConfirmDialog
+            cancelLabel="Cancel"
+            confirmLabel="Delete"
+            message="Delete this template? Flows created from it are not affected. This cannot be undone."
+            onCancel={() => setPendingDeleteId(null)}
+            onConfirm={() => {
+              if (pendingDeleteId !== null) {
+                void handleDelete(pendingDeleteId);
+              }
+              setPendingDeleteId(null);
+            }}
+            open={pendingDeleteId !== null}
+            title="Delete Template"
           />
 
           <section className={styles.guideSection}>
@@ -409,7 +442,8 @@ export function TemplatesPage() {
                       <p>
                         Build your flow in the Flow Builder. Add nodes, configure them, wire the
                         connections, and give the flow a meaningful name. When ready, save the flow
-                        using the Save button in the top bar.
+                        using the Save button in the top bar. To keep it as a template on this page,
+                        choose &quot;save as template&quot; for the flow on the Flows page.
                       </p>
                     </div>
                   ) : null}

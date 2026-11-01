@@ -600,6 +600,24 @@ export async function importFlowDocument(document: unknown): Promise<ImportFlowD
   return response.data;
 }
 
+export interface CreateTemplatePayload {
+  flowId: number;
+  name?: string;
+  category?: string;
+  description?: string;
+}
+
+/** Saves a snapshot of an existing flow (with its submenus) as a new template. */
+export async function createTemplate(payload: CreateTemplatePayload): Promise<DetailResponse<{ id: number; name: string }>> {
+  const response = await api.post<DetailResponse<{ id: number; name: string }>>('/templates', payload);
+  return response.data;
+}
+
+export async function deleteTemplate(id: number): Promise<DetailResponse<{ id: number; deleted: true }>> {
+  const response = await api.delete<DetailResponse<{ id: number; deleted: true }>>(`/templates/${id}`);
+  return response.data;
+}
+
 export async function importTemplate(id: number): Promise<DetailResponse<{ id: number; name: string }>> {
   const response = await api.post<DetailResponse<{ id: number; name: string }>>(`/templates/${id}/import`);
   return response.data;
