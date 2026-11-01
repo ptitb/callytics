@@ -230,6 +230,10 @@ describe('RecordingsService', () => {
       expect(plainToInstance(ListRecordingsQueryDto, plain)).toMatchObject({ page: 2, limit: 10 });
     });
 
+    it('should accept the internal source filter', async () => {
+      expect(await validateQuery({ source: 'internal' })).toHaveLength(0);
+    });
+
     it('should accept an empty query', async () => {
       expect(await validateQuery({})).toHaveLength(0);
     });
@@ -333,6 +337,8 @@ describe('RecordingsService', () => {
       await service.createInternal(dto);
       expect(recordingsRepo.create).toHaveBeenLastCalledWith(expect.objectContaining({ recordingType: 'inbound' }));
 
+      await service.createInternal({ ...dto, recordingType: 'internal' });
+      expect(recordingsRepo.create).toHaveBeenLastCalledWith(expect.objectContaining({ recordingType: 'internal' }));
       await service.createInternal({ ...dto, recordingType: 'outbound' });
       expect(recordingsRepo.create).toHaveBeenLastCalledWith(expect.objectContaining({ recordingType: 'outbound' }));
     });

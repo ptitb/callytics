@@ -145,6 +145,9 @@ describe('SettingsService outbound dialing settings', () => {
       outbound_country_code: '31',
       outbound_international_prefix: '00',
       outbound_wait_audio: 'ringback',
+      outbound_min_number_length: '0',
+      outbound_allowed_short_numbers: '112',
+      record_internal_calls: 'false',
     });
   });
 
@@ -163,6 +166,58 @@ describe('SettingsService outbound dialing settings', () => {
       outbound_international_prefix: '011',
       outbound_wait_audio: 'moh',
     });
+  });
+
+  it('reads the short number and internal recording settings with the right types', async () => {
+    settingsRepository.find.mockResolvedValue([
+      { key: 'outbound_min_number_length', value: '6' },
+      { key: 'outbound_allowed_short_numbers', value: '112,911' },
+      { key: 'record_internal_calls', value: 'true' },
+    ]);
+    await expect(service.getAll()).resolves.toEqual({
+      outbound_min_number_length: 6,
+      outbound_allowed_short_numbers: '112,911',
+      record_internal_calls: true,
+    });
+  });
+
+  it('keeps an empty allowed short numbers list empty and falls back for bad stored values', async () => {
+    settingsRepository.find.mockResolvedValue([
+      { key: 'outbound_min_number_length', value: 'abc' },
+      { key: 'outbound_allowed_short_numbers', value: '' },
+    ]);
+    await expect(service.getAll()).resolves.toEqual({
+      outbound_min_number_length: 0,
+      outbound_allowed_short_numbers: '',
+    });
+    settingsRepository.find.mockResolvedValue([
+      { key: 'outbound_min_number_length', value: '' },
+      { key: 'outbound_allowed_short_numbers', value: '11a' },
+    ]);
+    await expect(service.getAll()).resolves.toEqual({
+      outbound_min_number_length: 0,
+      outbound_allowed_short_numbers: '112',
+    });
+  });
+
+  it('saves the short number and internal recording settings', async () => {
+    await service.updateMany({
+      outbound_min_number_length: 6,
+      outbound_allowed_short_numbers: ' 112, 911 ,,',
+      record_internal_calls: true,
+    });
+    const saved = settingsRepository.save.mock.calls.map(([row]: [{ key: string; value: string }]) => [row.key, row.value]);
+    expect(saved).toEqual(expect.arrayContaining([
+      ['outbound_min_number_length', '6'],
+      ['outbound_allowed_short_numbers', '112,911'],
+      ['record_internal_calls', 'true'],
+    ]));
+  });
+
+  it('accepts an empty allowed short numbers list', async () => {
+    await service.updateMany({ outbound_allowed_short_numbers: '' });
+    const saved = settingsRepository.save.mock.calls.map(([row]: [{ key: string; value: string }]) => [row.key, row.value]);
+    expect(saved).toEqual(expect.arrayContaining([['outbound_allowed_short_numbers', '']]));
   });
 
   it('saves valid outbound settings', async () => {
@@ -199,6 +254,18 @@ describe('SettingsService outbound dialing settings', () => {
     ['outbound_wait_audio', ''],
     ['outbound_wait_audio', true],
     ['outbound_wait_audio', null],
+    ['outbound_min_number_length', -1],
+    ['outbound_min_number_length', 2.5],
+    ['outbound_min_number_length', 21],
+    ['outbound_min_number_length', '6'],
+    ['outbound_min_number_length', null],
+    ['outbound_allowed_short_numbers', '112;911'],
+    ['outbound_allowed_short_numbers', '11a'],
+    ['outbound_allowed_short_numbers', '+112'],
+    ['outbound_allowed_short_numbers', 112],
+    ['outbound_allowed_short_numbers', null],
+    ['record_internal_calls', 'yes'],
+    ['record_internal_calls', null],
   ])('rejects %s = %p', async (key, value) => {
     await expect(service.updateMany({ [key]: value as never })).rejects.toThrow(BadRequestException);
   });

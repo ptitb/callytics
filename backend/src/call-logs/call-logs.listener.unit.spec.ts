@@ -39,6 +39,26 @@ describe('CallLogsListener', () => {
     );
   });
 
+  it('inserts internal direction on started events', async () => {
+    dataSource.query.mockResolvedValue(undefined);
+
+    await (listener as any).handleCallStarted({
+      callId: 'call-3',
+      timestamp: '2026-05-02T10:00:00.000Z',
+      type: 'started',
+      caller: '1001',
+      callerId: '1001',
+      destination: '1002',
+      direction: 'internal',
+      trunkId: null,
+    });
+
+    expect(dataSource.query).toHaveBeenCalledWith(
+      expect.stringContaining('INSERT INTO call_logs'),
+      expect.arrayContaining(['internal', '1001', '1002']),
+    );
+  });
+
   it('updates answered_at and duration on ended events', async () => {
     dataSource.query.mockResolvedValue(undefined);
 

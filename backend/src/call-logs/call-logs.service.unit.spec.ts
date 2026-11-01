@@ -100,4 +100,14 @@ describe('CallLogsService', () => {
     expect(sql).toContain('cl.caller_number ILIKE $1 OR cl.callee_number ILIKE $1');
     expect(queryParams).toEqual(['%3333%']);
   });
+
+  it('filters on the internal direction', async () => {
+    mockDataSource.query.mockResolvedValueOnce([]);
+
+    await service.exportCsv({ direction: 'internal' });
+
+    const [sql, queryParams] = mockDataSource.query.mock.calls[0];
+    expect(sql).toContain('cl.direction = $1');
+    expect(queryParams).toEqual(['internal']);
+  });
 });

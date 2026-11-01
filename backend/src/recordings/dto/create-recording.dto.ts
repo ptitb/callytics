@@ -1,6 +1,6 @@
 import { IsDateString, IsIn, IsInt, IsOptional, IsString, MaxLength, Min } from 'class-validator';
 
-export const RECORDING_TYPES = ['inbound', 'outbound', 'voicemail'] as const;
+export const RECORDING_TYPES = ['inbound', 'outbound', 'internal', 'voicemail'] as const;
 export type RecordingType = (typeof RECORDING_TYPES)[number];
 
 export class CreateRecordingDto {

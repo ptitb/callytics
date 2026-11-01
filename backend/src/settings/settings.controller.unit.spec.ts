@@ -19,7 +19,13 @@ describe('SettingsController outbound dialing', () => {
   });
 
   it('does not touch the dialplan for settings stasis reads at call time', async () => {
-    await controller.updateSettings({ outbound_country_code: '44', outbound_normalize_e164: false });
+    await controller.updateSettings({
+      outbound_country_code: '44',
+      outbound_normalize_e164: false,
+      outbound_min_number_length: 6,
+      outbound_allowed_short_numbers: '112',
+      record_internal_calls: true,
+    });
     expect(asteriskConfigService.syncDialplan).not.toHaveBeenCalled();
   });
 

@@ -11,7 +11,7 @@ interface CallStartedEvent {
   caller: string;
   callerId?: string;
   destination?: string;
-  direction?: 'inbound' | 'outbound';
+  direction?: 'inbound' | 'outbound' | 'internal';
   flowId?: number;
   flowVersionId?: number;
   entryNodeKey?: string;
@@ -45,7 +45,7 @@ interface CallFailedEvent {
   caller: string;
   callerId?: string;
   destination?: string;
-  direction?: 'inbound' | 'outbound';
+  direction?: 'inbound' | 'outbound' | 'internal';
   flowId?: number;
   flowVersionId?: number;
   failedNode?: string;

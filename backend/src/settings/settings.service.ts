@@ -4,7 +4,14 @@ import { DataSource, Repository } from 'typeorm';
 import { getEnvRtpRange, validateRtpRange } from '../asterisk/rtp-range';
 import { runSqlMigrations } from '../db/run-sql-migrations';
 import { SipTrunkEntity } from '../trunks/entities/sip-trunk.entity';
-import { OUTBOUND_DEFAULTS, validateOutboundCountryCode, validateOutboundInternationalPrefix, validateOutboundWaitAudio } from './outbound-dialing';
+import {
+  OUTBOUND_DEFAULTS,
+  validateOutboundAllowedShortNumbers,
+  validateOutboundCountryCode,
+  validateOutboundInternationalPrefix,
+  validateOutboundMinNumberLength,
+  validateOutboundWaitAudio,
+} from './outbound-dialing';
 import { SettingsEntity } from './settings.entity';
 
 export type SettingValue = boolean | number | string | null;
@@ -188,9 +195,9 @@ export class SettingsService implements OnModuleInit {
       return String(value);
     }
 
-    if (key === 'record_outbound_calls') {
+    if (key === 'record_outbound_calls' || key === 'record_internal_calls') {
       if (typeof value !== 'boolean') {
-        throw new BadRequestException('record_outbound_calls must be a boolean');
+        throw new BadRequestException(`${key} must be a boolean`);
       }
       return this.serializeValue(value);
     }
@@ -234,6 +241,23 @@ export class SettingsService implements OnModuleInit {
       return this.serializeValue(value);
     }
 
+    if (key === 'outbound_min_number_length') {
+      const message = validateOutboundMinNumberLength(value);
+      if (message) {
+        throw new BadRequestException(message);
+      }
+      return this.serializeValue(value);
+    }
+
+    if (key === 'outbound_allowed_short_numbers') {
+      const message = validateOutboundAllowedShortNumbers(value);
+      if (message) {
+        throw new BadRequestException(message);
+      }
+      // Store a clean list: no spaces, no empty entries.
+      return String(value).split(',').map((entry) => entry.trim()).filter((entry) => entry !== '').join(',');
+    }
+
     if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
       throw new BadRequestException(`unsupported value type for setting ${key}`);
     }
@@ -250,7 +274,7 @@ export class SettingsService implements OnModuleInit {
       return Number.isInteger(parsed) && parsed > 0 ? parsed : null;
     }
 
-    if (key === 'record_outbound_calls') {
+    if (key === 'record_outbound_calls' || key === 'record_internal_calls') {
       return value === 'true';
     }
 
@@ -279,6 +303,19 @@ export class SettingsService implements OnModuleInit {
 
     if (key === 'outbound_wait_audio') {
       return validateOutboundWaitAudio(value) ? OUTBOUND_DEFAULTS[key] : value;
+    }
+
+    if (key === 'outbound_min_number_length') {
+      const parsed = Number(value ?? '');
+      return validateOutboundMinNumberLength(parsed) || (value ?? '').trim() === '' ? OUTBOUND_DEFAULTS[key] : parsed;
+    }
+
+    if (key === 'outbound_allowed_short_numbers') {
+      // An empty value is a valid, empty list. Only a missing row falls back to the default.
+      if (value === null) {
+        return OUTBOUND_DEFAULTS[key];
+      }
+      return validateOutboundAllowedShortNumbers(value) ? OUTBOUND_DEFAULTS[key] : value;
     }
 
     return value;
