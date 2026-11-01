@@ -134,6 +134,16 @@ export class AsteriskConfigService implements OnModuleInit {
       );
     }
     try {
+      // Rewrite the dialplan so a new release applies its dialplan changes without manual steps.
+      // The file is written before the reload, so a not yet running Asterisk still loads it.
+      await this.syncDialplan();
+    } catch (error) {
+      this.logger.error(
+        "failed to regenerate dialplan on startup",
+        error instanceof Error ? error.stack : String(error),
+      );
+    }
+    try {
       const extensions = await this.extensionsRepository.find({
         order: { username: "ASC" },
       });
