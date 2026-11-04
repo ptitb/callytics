@@ -8,6 +8,7 @@ import { isHangupError, waitForPlaybackFinished } from '../lib/playback';
 import { beginNodeRecording, persistSessionRecording } from '../bridgeRecording';
 import { formatDialNumber } from '../lib/formatDialNumber';
 import { fetchTrunkDialFormat } from '../lib/trunkResolver';
+import { waitForLegEnd } from '../lib/channelReplacements';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://127.0.0.1:3001';
 
@@ -278,36 +279,25 @@ function waitForFirstAnswerOrAllDone(
   });
 }
 
-function waitForChannelEnd(
-  ariClient: AriLike,
-  channelIds: string[],
-): Promise<string> {
-  return new Promise((resolve) => {
-    const onEnd = (event: { channel?: { id?: string } }) => {
-      const channelId = event.channel?.id || '';
-      if (!channelIds.includes(channelId)) {
-        return;
-      }
-      cleanup();
-      resolve(channelId);
-    };
-
-    const cleanup = () => {
-      ariClient.removeListener('StasisEnd', onEnd);
-      ariClient.removeListener('ChannelDestroyed', onEnd);
-    };
-
-    ariClient.on('StasisEnd', onEnd);
-    ariClient.on('ChannelDestroyed', onEnd);
-  });
-}
-
 async function hangupChannels(channels: HuntExecutorChannel[], keepChannelId?: string | null): Promise<void> {
   await Promise.allSettled(
     channels
       .filter((channel) => channel.id !== keepChannelId)
       .map((channel) => channel.hangup().catch(() => undefined)),
   );
+}
+
+/** Hangs up a leg that may have been replaced by another channel since it was tracked. */
+async function hangupCurrentChannel(
+  ariClient: AriLike,
+  tracked: HuntExecutorChannel,
+  currentChannelId: string,
+): Promise<void> {
+  if (currentChannelId === tracked.id) {
+    await tracked.hangup().catch(() => undefined);
+    return;
+  }
+  await ariClient.channels.hangup({ channelId: currentChannelId }).catch(() => undefined);
 }
 
 async function hangupAttemptChannel(ariClient: AriLike, channelId: string): Promise<void> {
@@ -619,10 +609,12 @@ export async function executeHunt(
   };
 
   const finalizeAnswer = async (answeredChannel: HuntExecutorChannel, operatorLabel: string | null): Promise<string> => {
-    const endPromise = waitForChannelEnd(client, [channel.id, answeredChannel.id]);
+    // A phone transfer swaps a leg for a Local channel: follow it instead of treating it as a hangup.
+    const endPromise = waitForLegEnd(client, [channel.id, answeredChannel.id]);
     await stopHold();
     await hangupChannels(pendingChannels, answeredChannel.id);
     pendingChannels = [answeredChannel];
+    session.connectedChannelId = answeredChannel.id;
     logEvent('HuntAnsweredBridgeAdd', { inboundChannelId: channel.id, outboundChannelId: answeredChannel.id, bridgeId });
     await client.bridges.addChannel({ bridgeId, channel: answeredChannel.id });
     const connectedAt = new Date();
@@ -630,13 +622,10 @@ export async function executeHunt(
       const ts = Date.now();
       await beginNodeRecording(session, bridgeId, `${session.callUuid}-hunt-${ts}`, 'hunt', operatorLabel);
     }
-    const endedChannelId = await endPromise;
+    const { endedIndex, channelIds } = await endPromise;
     const disconnectedAt = new Date();
-    if (endedChannelId === channel.id) {
-      await hangupChannels([answeredChannel]);
-    } else {
-      await channel.hangup().catch(() => undefined);
-    }
+    const peer = endedIndex === 0 ? answeredChannel : channel;
+    await hangupCurrentChannel(client, peer, channelIds[endedIndex === 0 ? 1 : 0]);
     if (Boolean(nodeConfig.record_call) && Boolean(nodeConfig.send_to_webhook)) {
       const persisted = await persistSessionRecording(session);
       if (persisted) {

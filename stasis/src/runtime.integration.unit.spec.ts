@@ -15,6 +15,7 @@ jest.mock('./huntManager', () => ({
   registerHuntWaiter: jest.fn(),
 }));
 
+import { REPLACEMENT_GRACE_MS } from './lib/channelReplacements';
 import { query } from './db';
 import { resolveAudioMediaPath } from './audioResolver';
 import { registerHuntWaiter } from './huntManager';
@@ -192,6 +193,7 @@ describe('runtime integration — menu to submenu hunt', () => {
     });
 
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
 
     await expect(runPromise).resolves.toEqual({status : 'completed'})

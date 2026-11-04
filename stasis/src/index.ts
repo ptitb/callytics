@@ -8,6 +8,7 @@ import {
   addSession,
   type CallSession,
   createSession,
+  findSessionByChannelIds,
   getActiveSessionCount,
   getSession,
   markCallEnded,
@@ -54,6 +55,18 @@ import {
 } from "./lib/internalCall";
 import { waitForPlaybackFinished } from "./lib/playback";
 import { resolveStasisChannel } from "./lib/ariChannel";
+import {
+  followCallLegReplacement,
+  handleReplacementStasisStart,
+} from "./lib/channelReplacements";
+import {
+  type BridgeAttendedTransferEvent,
+  type BridgeBlindTransferEvent,
+  type PhoneTransfer,
+  parseAttendedTransfer,
+  parseBlindTransfer,
+  recordPhoneTransfer,
+} from "./transferEvents";
 import { closeRedisConnections, getPublisher, getSubscriber } from "./redis";
 import { buildInboundOriginateBody, parseInboundTestMessage } from "./trunk-test.util";
 import { accumulator as rtcpAmiAccumulator } from "./handlers/rtcp-ami.handler";
@@ -701,6 +714,8 @@ async function dialAndBridge(
           timeout: Math.max(1, Math.ceil(DIRECT_OUTBOUND_TIMEOUT_MS / 1000)),
         });
       },
+      hangupOutbound: () =>
+        (ariClientRaw as DirectOutboundAriClient).channels.hangup({ channelId: outboundChannelId }),
     },
   );
 
@@ -1214,13 +1229,20 @@ async function start(): Promise<void> {
         event: {
           args?: string[];
           channel?: {
+            id?: string;
             caller?: { number?: string };
             dnid?: string;
             dialplan?: { context?: string; exten?: string };
           };
+          replace_channel?: { id?: string };
         },
         channelResource: unknown,
       ) => {
+        // A channel that Asterisk swapped into a bridge in place of another one (phone transfer)
+        // continues an existing call. It never starts a flow or an inbound, internal or hunt call.
+        if (handleReplacementStasisStart(event, channelResource)) {
+          return;
+        }
         const channel = resolveStasisChannel<{
           id: string;
           answer: () => Promise<void>;
@@ -1508,6 +1530,9 @@ async function start(): Promise<void> {
         }
         const directOutboundCall = directOutboundCalls.get(channelId);
         if (directOutboundCall) {
+          if (await followCallLegReplacement(directOutboundCall, directOutboundCalls, channelId)) {
+            return;
+          }
           await cleanupDirectOutboundCall(client, directOutboundCall, channelId);
           return;
         }
@@ -1628,6 +1653,27 @@ async function start(): Promise<void> {
       },
     );
 
+    // Transfers done by a phone (REFER): add them to the timeline of the call they belong to.
+    const onPhoneTransfer = (transfer: PhoneTransfer | null) => {
+      if (!transfer) {
+        return;
+      }
+      const session = findSessionByChannelIds(transfer.channelIds);
+      if (!session) {
+        logEvent("PhoneTransferWithoutSession", { kind: transfer.kind, channelIds: transfer.channelIds });
+        return;
+      }
+      void recordPhoneTransfer(session, transfer).catch((error) =>
+        stasisLogger.error("[transfer] recording phone transfer failed:", error),
+      );
+    };
+    client.on("BridgeAttendedTransfer", (event: BridgeAttendedTransferEvent) =>
+      onPhoneTransfer(parseAttendedTransfer(event)),
+    );
+    client.on("BridgeBlindTransfer", (event: BridgeBlindTransferEvent) =>
+      onPhoneTransfer(parseBlindTransfer(event)),
+    );
+
     client.on(
       "ChannelHangupRequest",
       (_event: unknown, channel: { id?: string } | undefined) => {
@@ -1664,6 +1710,9 @@ async function start(): Promise<void> {
         }
         const directOutboundCall = directOutboundCalls.get(channel.id);
         if (directOutboundCall) {
+          if (await followCallLegReplacement(directOutboundCall, directOutboundCalls, channel.id)) {
+            return;
+          }
           await cleanupDirectOutboundCall(
             client,
             directOutboundCall,

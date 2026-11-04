@@ -119,6 +119,38 @@ describe('waitForDirectOutboundAnswer', () => {
     await expect(pending).resolves.toEqual({ answered: false, reason: 'caller_disconnected' });
   });
 
+  it('hangs up the still ringing outbound leg when the caller hangs up', async () => {
+    const { client, emitter } = createClient();
+    const params = baseParams('t-caller-ringing');
+    const hangupOutbound = jest.fn().mockResolvedValue(undefined);
+    const pending = waitForDirectOutboundAnswer(client, logger, {
+      ...params,
+      hangupOutbound,
+      originate: async () => {
+        setImmediate(() => emitter.emit('StasisEnd', { channel: { id: 'inbound-1' } }));
+      },
+    });
+
+    await expect(pending).resolves.toEqual({ answered: false, reason: 'caller_disconnected' });
+    expect(hangupOutbound).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not hang up an outbound leg that is already destroyed', async () => {
+    const { client, emitter } = createClient();
+    const params = baseParams('t-destroyed-no-hangup');
+    const hangupOutbound = jest.fn().mockResolvedValue(undefined);
+    const pending = waitForDirectOutboundAnswer(client, logger, {
+      ...params,
+      hangupOutbound,
+      originate: async () => {
+        setImmediate(() => emitter.emit('ChannelDestroyed', { channel: { id: params.outboundChannelId } }));
+      },
+    });
+
+    await expect(pending).resolves.toEqual(expect.objectContaining({ reason: 'destroyed' }));
+    expect(hangupOutbound).not.toHaveBeenCalled();
+  });
+
   it('times out when nothing happens and removes its listeners', async () => {
     const { client, emitter } = createClient();
     const result = await waitForDirectOutboundAnswer(client, logger, {

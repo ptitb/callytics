@@ -8,6 +8,7 @@ import {
 } from './callbackManager';
 import { formatDialNumber } from './lib/formatDialNumber';
 import { fetchTrunkDialFormat } from './lib/trunkResolver';
+import { waitForLegEnd } from './lib/channelReplacements';
 
 const DEFAULT_CALLBACK_MOH_CLASS =
   process.env.CALLBACK_MOH_CLASS || process.env.QUEUE_LOGIN_MOH_CLASS || 'callytics-hold';
@@ -37,6 +38,7 @@ interface AriClient {
     }) => Promise<{ id?: string } | void>;
     startMoh?: (params: { channelId: string; mohClass?: string }) => Promise<void>;
     stopMoh?: (params: { channelId: string }) => Promise<void>;
+    hangup?: (params: { channelId: string }) => Promise<void>;
   };
   bridges: {
     create: (params: { type: string }) => Promise<{ id: string }>;
@@ -76,30 +78,6 @@ function waitForAnsweredLeg(
         clearTimeout(timer);
         resolve({ answered: false, reason: 'failed' });
       });
-  });
-}
-
-function waitForChannelEnd(
-  ariClient: AriClient,
-  channelIds: string[],
-): Promise<string> {
-  return new Promise((resolve) => {
-    const onEnd = (event: { channel?: { id?: string } }) => {
-      const endedChannelId = String(event.channel?.id || '').trim();
-      if (!endedChannelId || !channelIds.includes(endedChannelId)) {
-        return;
-      }
-      cleanup();
-      resolve(endedChannelId);
-    };
-
-    const cleanup = () => {
-      ariClient.removeListener('StasisEnd', onEnd);
-      ariClient.removeListener('ChannelDestroyed', onEnd);
-    };
-
-    ariClient.on('StasisEnd', onEnd);
-    ariClient.on('ChannelDestroyed', onEnd);
   });
 }
 
@@ -369,13 +347,18 @@ export async function executeCallback(
     await ariClient.bridges.addChannel({ bridgeId: bridge.id, channel: operatorChannel.id });
     await ariClient.bridges.addChannel({ bridgeId: bridge.id, channel: customerChannel.id });
 
-    const endedChannelId = await waitForChannelEnd(ariClient, [operatorChannel.id, customerChannel.id]);
-    const survivingChannel = endedChannelId === operatorChannel.id ? customerChannel : operatorChannel;
+    const { endedIndex, channelIds } = await waitForLegEnd(ariClient, [operatorChannel.id, customerChannel.id]);
+    const survivingChannel = endedIndex === 0 ? customerChannel : operatorChannel;
+    const survivingChannelId = channelIds[endedIndex === 0 ? 1 : 0];
     stasisLogger.log(
-      `[callback] leg ended callback_id=${callbackId} ended_channel=${endedChannelId} surviving_channel=${survivingChannel.id}`,
+      `[callback] leg ended callback_id=${callbackId} ended_channel=${channelIds[endedIndex]} surviving_channel=${survivingChannelId}`,
     );
 
-    await survivingChannel.hangup().catch(() => undefined);
+    if (survivingChannelId === survivingChannel.id) {
+      await survivingChannel.hangup().catch(() => undefined);
+    } else {
+      await ariClient.channels.hangup?.({ channelId: survivingChannelId }).catch(() => undefined);
+    }
     await ariClient.bridges.destroy({ bridgeId: bridge.id }).catch(() => undefined);
     stasisLogger.log(`[callback] bridge destroyed callback_id=${callbackId} bridge=${bridge.id}`);
 

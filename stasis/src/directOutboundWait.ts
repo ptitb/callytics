@@ -42,7 +42,9 @@ function describeCause(event: AriEvent): string {
  * - the caller hangs up (reason "caller_disconnected"),
  * - the timeout expires (reason "timeout").
  * The outbound channel id is chosen by the caller so it can be watched before
- * originate() returns.
+ * originate() returns. When the wait fails for any reason other than the outbound
+ * channel being destroyed, hangupOutbound is called so the originated leg does not
+ * keep ringing (and cannot be answered with nobody left on the call).
  */
 export async function waitForDirectOutboundAnswer(
   ariClient: DirectOutboundWaitClient,
@@ -52,10 +54,11 @@ export async function waitForDirectOutboundAnswer(
     inboundChannelId: string;
     outboundChannelId: string;
     originate: () => Promise<void>;
+    hangupOutbound?: () => Promise<void>;
     timeoutMs: number;
   },
 ): Promise<DirectOutboundWaiterResult> {
-  const { token, inboundChannelId, outboundChannelId, originate, timeoutMs } = params;
+  const { token, inboundChannelId, outboundChannelId, originate, hangupOutbound, timeoutMs } = params;
   const waiter = registerDirectOutboundWaiter(token);
   let timeoutHandle: NodeJS.Timeout | null = null;
 
@@ -104,7 +107,11 @@ export async function waitForDirectOutboundAnswer(
   }, timeoutMs);
 
   try {
-    return await waiter;
+    const result = await waiter;
+    if (result.answered === false && result.reason !== 'destroyed') {
+      await hangupOutbound?.().catch(() => undefined);
+    }
+    return result;
   } finally {
     cleanup();
   }

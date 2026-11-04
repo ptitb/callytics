@@ -58,6 +58,8 @@ export interface CallSession {
   inboundBridge: InboundBridgeState | null;
   /** True once the caller's channel is gone (hangup requested, left Stasis or destroyed). */
   callerGone?: boolean;
+  /** The internal-side channel currently bridged with the caller (hunt or transfer target). */
+  connectedChannelId?: string;
 }
 
 export function createSession(
@@ -110,6 +112,17 @@ export function addSession(session: CallSession) {
 
 export function getSession(channelId: string) {
   return activeSessions.get(channelId);
+}
+
+/** Finds the session whose caller or connected channel is one of the given channel ids. */
+export function findSessionByChannelIds(channelIds: string[]): CallSession | undefined {
+  for (const session of activeSessions.values()) {
+    if (channelIds.includes(session.channelId)
+      || (session.connectedChannelId && channelIds.includes(session.connectedChannelId))) {
+      return session;
+    }
+  }
+  return undefined;
 }
 
 export function removeSession(channelId: string) {

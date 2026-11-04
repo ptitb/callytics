@@ -19,6 +19,7 @@ import { executeQueue } from "../executors/queue.executor";
 import { executeCallbackNode } from "./callback.executor";
 import { executeConference } from "./conference.executor";
 import { logEvent } from "../logger";
+import { waitForLegEnd } from "../lib/channelReplacements";
 import { isHangupError, waitForPlaybackFinished } from "../lib/playback";
 import { INTER_DIGIT_TIMEOUT_MS, resolveNodeTimeoutMs } from "../timeoutResolver";
 import { beginNodeRecording, persistSessionRecording } from "../bridgeRecording";
@@ -291,40 +292,6 @@ async function executeGetDigits(
 
 async function executeBranch(): Promise<string> {
   return "default";
-}
-
-function waitForChannelEnd(
-  ariClient: unknown,
-  channelIds: string[],
-): Promise<string> {
-  const client = ariClient as {
-    on: (
-      event: string,
-      listener: (event: { channel?: { id?: string } }) => void,
-    ) => void;
-    removeListener: (
-      event: string,
-      listener: (event: { channel?: { id?: string } }) => void,
-    ) => void;
-  };
-
-  return new Promise((resolve) => {
-    const onEnd = (event: { channel?: { id?: string } }) => {
-      const endedChannelId = event.channel?.id;
-      if (endedChannelId && channelIds.includes(endedChannelId)) {
-        cleanup();
-        resolve(endedChannelId);
-      }
-    };
-
-    const cleanup = () => {
-      client.removeListener("StasisEnd", onEnd);
-      client.removeListener("ChannelDestroyed", onEnd);
-    };
-
-    client.on("StasisEnd", onEnd);
-    client.on("ChannelDestroyed", onEnd);
-  });
 }
 
 async function fetchContactNumber(
@@ -813,75 +780,21 @@ async function executeTransfer(
       await beginNodeRecording(session, bridgeId, `${session.callUuid}-transfer-${Date.now()}`, 'transfer', String(targetConfig.target_value || '').trim() || null);
     }
 
-    let teardownTriggered = false;
-    const hangupPeer = (params: {
-      endedChannelId: string;
-      peerChannelId: string;
-      peer: { hangup?: () => Promise<void> };
-    }) => {
-      if (teardownTriggered) {
-        return;
-      }
-      teardownTriggered = true;
-      logEvent("TransferSymmetricTeardownStart", {
-        endedChannelId: params.endedChannelId,
-        peerChannelId: params.peerChannelId,
-      });
-      if (params.peer?.hangup) {
-        void params.peer.hangup().catch((error) => {
-          logEvent("TransferSymmetricTeardownPeerHangupFailed", {
-            endedChannelId: params.endedChannelId,
-            peerChannelId: params.peerChannelId,
-            error,
-          });
-        });
-      } else {
-        void client.channels.hangup({ channelId: params.peerChannelId }).catch((error) => {
-          logEvent("TransferSymmetricTeardownPeerHangupFailed", {
-            endedChannelId: params.endedChannelId,
-            peerChannelId: params.peerChannelId,
-            error,
-          });
-        });
-      }
-    };
+    session.connectedChannelId = outboundChannel.id;
 
-    const onTransferLegEnded = (event: { channel?: { id?: string } }) => {
-      const endedChannelId = String(event.channel?.id || "");
-      if (!endedChannelId) {
-        return;
-      }
-      if (endedChannelId === outboundChannel.id) {
-        hangupPeer({
-          endedChannelId,
-          peerChannelId: channel.id,
-          peer: channel,
-        });
-        return;
-      }
-      if (endedChannelId === channel.id) {
-        hangupPeer({
-          endedChannelId,
-          peerChannelId: outboundChannel.id,
-          peer: outboundChannel,
-        });
-      }
-    };
-
-    client.on("StasisEnd", onTransferLegEnded);
-    client.on("ChannelDestroyed", onTransferLegEnded);
-
-    const endedChannelId = await waitForChannelEnd(ariClient, [
+    // A phone transfer swaps a leg for a Local channel: follow it instead of treating it as a hangup.
+    const { endedIndex, channelIds } = await waitForLegEnd(client, [
       channel.id,
       outboundChannel.id,
     ]);
-    client.removeListener("StasisEnd", onTransferLegEnded);
-    client.removeListener("ChannelDestroyed", onTransferLegEnded);
-    const survivingChannel = endedChannelId === channel.id ? outboundChannel : channel;
-    if (survivingChannel?.hangup) {
-      await survivingChannel.hangup().catch(() => undefined);
+    const endedChannelId = channelIds[endedIndex];
+    const peer = endedIndex === 0 ? outboundChannel : channel;
+    const peerChannelId = channelIds[endedIndex === 0 ? 1 : 0];
+    logEvent("TransferSymmetricTeardownStart", { endedChannelId, peerChannelId });
+    if (peer?.hangup && peerChannelId === peer.id) {
+      await peer.hangup().catch(() => undefined);
     } else {
-      await client.channels.hangup({ channelId: endedChannelId === channel.id ? outboundChannel.id : channel.id }).catch(() => undefined);
+      await client.channels.hangup({ channelId: peerChannelId }).catch(() => undefined);
     }
     if (!session.inboundBridge || session.inboundBridge.id !== bridgeId) {
       try {

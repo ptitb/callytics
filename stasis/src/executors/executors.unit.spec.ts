@@ -29,6 +29,7 @@ jest.mock('../bridgeRecording', () => ({
   persistSessionRecording: jest.fn().mockResolvedValue(null),
 }));
 
+import { recordChannelReplacement, REPLACEMENT_GRACE_MS, resetChannelReplacements } from '../lib/channelReplacements';
 import { executeNode } from '../nodes';
 import { executeHunt } from '../nodes/hunt.executor';
 import { resolveAudioMediaPath } from '../audioResolver';
@@ -444,6 +445,7 @@ describe('transfer executor', () => {
   beforeEach(() => {
     jest.useFakeTimers();
     jest.clearAllMocks();
+    resetChannelReplacements();
     resolveAudioMediaPathMock.mockResolvedValue(null);
     rejectTransferWaiterMock.mockImplementation(() => undefined);
     huntWaiters.clear();
@@ -487,8 +489,37 @@ describe('transfer executor', () => {
     });
 
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
     await expect(promise).resolves.toBe('done');
+  });
+
+  it('follows a phone transfer of the target leg and hangs up the replacing channel at the end', async () => {
+    const ariClient = createAriClient();
+    const outboundChannel = { id: 'outbound-1', hangup: jest.fn().mockResolvedValue(undefined) };
+    registerTransferWaiterMock.mockReturnValue(
+      Promise.resolve({ answered: true, channel: outboundChannel }),
+    );
+    const channel = { id: 'channel-1', play: jest.fn(), hangup: jest.fn().mockResolvedValue(undefined) };
+    const node: FlowNode = { nodeKey: 'transfer-1', type: 'transfer', label: 'Transfer', config: { target_type: 'extension', target_value: '2001', timeout_ms: 7000 } };
+    const onResult = jest.fn();
+
+    void executeNode(channel as any, node, createSession(), ariClient as any).then(onResult);
+    await flushPromises(20);
+
+    recordChannelReplacement('outbound-1', 'local-1');
+    ariClient.emit('StasisEnd', { channel: { id: 'outbound-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS * 2);
+    expect(onResult).not.toHaveBeenCalled();
+    expect(channel.hangup).not.toHaveBeenCalled();
+
+    ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
+    await flushPromises(20);
+
+    expect(onResult).toHaveBeenCalledWith('done');
+    expect(ariClient.channels.hangup).toHaveBeenCalledWith({ channelId: 'local-1' });
+    expect(outboundChannel.hangup).not.toHaveBeenCalled();
   });
 
 it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>', async () => {
@@ -513,7 +544,9 @@ it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>
     );
 
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     ariClient.emit('StasisEnd', { channel: { id: 'outbound-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
     await expect(promise).resolves.toBe('done');
   });
@@ -557,6 +590,7 @@ it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>
     );
 
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
     await expect(promise).resolves.toBe('done');
   });
@@ -572,6 +606,7 @@ it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>
     const promise = executeNode({ id: 'channel-1', play: jest.fn(), hangup: jest.fn().mockResolvedValue(undefined) } as any, node, createSession(), ariClient as any);
     await flushPromises(20);
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
 
     await expect(promise).resolves.toBe('done');
@@ -597,6 +632,7 @@ it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>
     resolveWaiter?.({ answered: true, channel: { id: 'outbound-1', hangup: jest.fn().mockResolvedValue(undefined) } });
     await flushPromises(20);
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
 
     await expect(promise).resolves.toBe('done');
@@ -614,6 +650,7 @@ it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>
     const promise = executeNode({ id: 'channel-1', play: jest.fn(), hangup: jest.fn().mockResolvedValue(undefined) } as any, node, createSession(), ariClient as any);
     await flushPromises(20);
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
 
     await expect(promise).resolves.toBe('done');
@@ -658,6 +695,7 @@ it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>
     const promise = executeNode({ id: 'channel-1', play: jest.fn(), hangup: jest.fn().mockResolvedValue(undefined) } as any, node, createSession(), ariClient as any);
     await flushPromises(20);
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
 
     await expect(promise).resolves.toBe('done');
@@ -697,6 +735,7 @@ it('resolves pstn target through trunk and dials PJSIP/<number>@<trunk.username>
     );
     await flushPromises(20);
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises(20);
 
     await expect(promise).resolves.toBe('done');
@@ -747,6 +786,7 @@ describe('hunt executor', () => {
     ariClient.emit('ChannelStateChange', { channel: { id: 'hunt-1', state: 'Up' } });
     await flushPromises();
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises();
     await expect(promise).resolves.toBe('done');
   });
@@ -784,6 +824,7 @@ describe('hunt executor', () => {
     ariClient.emit('ChannelStateChange', { channel: { id: 'hunt-2', state: 'Up' } });
     await flushPromises();
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises();
     await expect(promise).resolves.toBe('done');
 
@@ -806,6 +847,7 @@ describe('hunt executor', () => {
     ariClient.emit('ChannelStateChange', { channel: { id: 'hunt-2', state: 'Up' } });
     await flushPromises();
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises();
 
     await expect(promise).resolves.toBe('done');
@@ -861,6 +903,7 @@ describe('hunt executor', () => {
     await flushPromises();
     await jest.advanceTimersByTimeAsync(250);
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises();
 
     await expect(promise).resolves.toBe('done');
@@ -893,6 +936,7 @@ describe('hunt executor', () => {
     );
 
     ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
     await flushPromises();
 
     await jest.advanceTimersByTimeAsync(4000);
