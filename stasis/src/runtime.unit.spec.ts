@@ -130,6 +130,40 @@ describe('runFlow dead-end safety', () => {
     expect(channel.hangup).toHaveBeenCalledTimes(1);
   });
 
+  it('routes a caller_match result to the edge of that branch and falls back to default', async () => {
+    const buildSession = () => {
+      const session = createSession();
+      session.flow.nodes = [
+        { nodeKey: 'start', type: 'start', label: 'Start', config: {} },
+        { nodeKey: 'match-1', type: 'caller_match', label: 'Caller match', config: {} },
+        { nodeKey: 'vip-hangup', type: 'hangup', label: 'VIP', config: {} },
+        { nodeKey: 'other-hangup', type: 'hangup', label: 'Other', config: {} },
+      ];
+      session.flow.edges = [
+        { sourceNodeKey: 'start', targetNodeKey: 'match-1', branchKey: 'default', condition: null },
+        { sourceNodeKey: 'match-1', targetNodeKey: 'vip-hangup', branchKey: 'vip', condition: 'vip' },
+        { sourceNodeKey: 'match-1', targetNodeKey: 'other-hangup', branchKey: 'default', condition: 'default' },
+      ];
+      return session;
+    };
+    const channel = { id: 'channel-1', hangup: jest.fn().mockResolvedValue(undefined) };
+
+    executeNodeMock
+      .mockResolvedValueOnce('default')
+      .mockResolvedValueOnce('vip')
+      .mockResolvedValueOnce('done');
+    await runFlow(channel as never, buildSession(), {});
+    expect(executeNodeMock.mock.calls[2]?.[1]?.nodeKey).toBe('vip-hangup');
+
+    executeNodeMock.mockClear();
+    executeNodeMock
+      .mockResolvedValueOnce('default')
+      .mockResolvedValueOnce('default')
+      .mockResolvedValueOnce('done');
+    await runFlow(channel as never, buildSession(), {});
+    expect(executeNodeMock.mock.calls[2]?.[1]?.nodeKey).toBe('other-hangup');
+  });
+
   it('routes menu branch into mapped submenu target node', async () => {
     const session = createSession();
     session.flow.nodes = [

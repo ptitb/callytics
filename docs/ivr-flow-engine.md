@@ -355,6 +355,16 @@ Notes:
 - Evaluated at runtime using `Intl.DateTimeFormat` — no external library
 - Midnight-crossing schedules not yet supported (TODO)
 
+### Caller Match
+
+- Type key: `caller_match`
+- Purpose: Branches on the caller's number, no audio, instant
+- Config fields:
+  - `rules` (array): ordered, the first match wins. Each rule: `branch` (1-32 letters, digits, `_`, `-`, unique, not `default`), `label` (optional), `match` (`exact`, `prefix`, `anonymous`), `value` (comma or newline separated numbers for `exact` and `prefix`)
+- Output branches: the `branch` of the first matching rule, otherwise `default`
+- Numbers are normalised (see `stasis/src/lib/callerMatch.ts`) with the outbound country code and international prefix settings before they are compared
+- The result is stored as `exit_branch` in `call_node_logs`
+
 ### Voicemail
 
 - Type key: `voicemail`

@@ -46,6 +46,7 @@ Simulation covers routing only: no audio, no Asterisk, no dialing (see `scripts/
 - Plain edges: `branchKey: "default"`, no `condition`.
 - Branching nodes: write `branchKey` and `condition` with the same value, and `sourceHandle` too if you want the editor to attach it to the right handle (the editor writes all three equal).
   - `business_hours`: `open` and `closed`.
+  - `caller_match`: one edge per rule, value = the rule's `branch`, plus `default` for callers that match no rule.
   - `menu`: one edge per digit in `config.branches`, value = digit (`1`, `2`, `*`, `#`, 1 to 2 characters). `complete` is the edge a submenu returns to.
   - `get_digits`: `condition` is required on every edge: digit, `timeout`, `invalid` or `default`.
   - `queue`: results are `connected`, `timeout`, `abandoned`. A result without an edge ends the call as failed.
@@ -57,10 +58,11 @@ What the import rejects (`validateEdgesConfig`):
 
 - Source or target node missing.
 - Outgoing edges from `hangup`, `transfer`, `voicemail`, `callback`, `queue_login` (except to a webhook). Transfer is terminal in the validator even though the runtime could continue after it.
-- `start` to anything except: play_audio, menu, business_hours, transfer, hunt, queue, queue_login, hangup, conference, webhook, callback, voicemail. So `start` cannot go straight to `get_digits`.
-- `get_digits` as target from anything except `play_audio`, `menu`, `business_hours`, `webhook` (not `start`).
+- `start` to anything except: play_audio, menu, business_hours, caller_match, transfer, hunt, queue, queue_login, hangup, conference, webhook, callback, voicemail. So `start` cannot go straight to `get_digits`.
+- `get_digits` as target from anything except `play_audio`, `menu`, `business_hours`, `caller_match`, `webhook` (not `start`).
 - `queue_login` as target from anything except `start`, `menu`, `play_audio`, `get_digits`.
 - `voicemail` as target from `hunt`, `transfer`, `queue`, `queue_login`. Voicemail on no answer is done with `on_no_answer`, not an edge.
+- A `caller_match` edge without `condition`, or with a condition that is not one of its rule branches or `default`.
 - Missing `condition` on edges from `menu` or `get_digits`. Menu conditions other than a digit, `*`, `#` or `complete`. get_digits conditions outside digit, `*`, `#`, `timeout`, `invalid`, `default`.
 
 ## Nodes
@@ -74,6 +76,7 @@ Results the runtime produces and where it goes next. "Terminal" means the valida
 | `menu` | `prompt_audio_file_id`, `branches` (array of digit strings) | `timeout_ms`, `max_timeout_attempts`, `max_invalid_attempts` (default 3), `timeout_prompt_audio_id`, `invalid_prompt_audio_id`, `final_failure_audio_id`, `submenu_branch_names` | digit from `branches`; one edge per branch | no |
 | `get_digits` | `variable_name`, `timeout_ms` | `prompt_audio_file_id` | digit, `timeout`, `invalid` (conditions required) | no |
 | `business_hours` | `timezone`, `schedule` with at least one `enabled` day | | `open`, `closed` | no |
+| `caller_match` | `rules` (>=1): `branch`, `match` (`exact`, `prefix`, `anonymous`), `value` for exact and prefix | `label` | the `branch` of the first matching rule, or `default`; one edge per rule plus `default` | no |
 | `hunt` | `destinations` (>=1) | `strategy`, `attempt_timeout_ms` (20000), `total_timeout_ms` (60000), `on_no_answer`, `hold_audio_file_id`, `busy_audio_file_id`, `record_call`, `send_to_webhook` | answered: `done`; else `route:<on_no_answer>` or hangup; optional continuation edge after `done` | no |
 | `transfer` | `target_type` (`extension`, `pstn`, `sip_uri`), `target_value` | `timeout_ms` (30000), `on_no_answer`, `trunk_id` (pstn), `waiting_sound_id`, `no_answer_sound_id`, `record_call`, `send_to_webhook` | answered: `done`; else `route:<on_no_answer>` or hangup | yes |
 | `voicemail` | `start_audio_id` | `mailbox_name` (default `main`), `max_duration_seconds` (60), `end_audio_id`, `send_to_webhook` | `done` | yes |
@@ -91,8 +94,9 @@ Details that matter:
 - `hunt` destinations: `{ "target_type": "extension" | "pstn", "target_value": "...", "trunk_id"?: n, "order"?: n }`. Strategies: `sequential` (default), `random`, `group`, `order`. `order` needs a unique positive `order` on every destination (the editor refuses to save otherwise, the import does not check). An extension value is letters, digits, `_`, `-` (1 to 64 chars). A pstn value is `+` optional and 4 to 20 digits.
 - `transfer` extension and pstn values follow the same patterns, `sip_uri` must look like `sip:user@host`.
 - `business_hours`: schedule keys `monday` to `sunday`, each `{ "enabled": bool, "open": "HH:MM", "close": "HH:MM" }`. `close` is inclusive (17:00 means 17:00 is still open). A day needs `close` after `open`, no crossing midnight (use `00:00` to `23:59`). Empty timezone means always `closed`. Write all seven days, set the unused ones to `enabled: false`.
+- `caller_match`: `rules` is an ordered list, the first match wins. Each rule: `{ "branch": "vip", "label": "VIP customer", "match": "exact", "value": "+31612345678, 0687654321" }`. `branch` is 1 to 32 letters, digits, `_` or `-`, unique in the node and not `default`. `match` is `exact` (caller equals one of the numbers), `prefix` (caller starts with one of the prefixes) or `anonymous` (caller id empty, `anonymous`, `unknown`, `restricted`, `private` or not a number, no `value`). For `exact` and `prefix`, `value` is one number or several separated by commas or new lines (needs at least one). Numbers are normalised before comparing, so `0612345678`, `+31612345678`, `0031612345678` and `31612345678` are equal: a leading `0` gets the country code of the outbound dialing setting, `00` becomes `+`, digits without a leading `0` and with 9 or more digits get a `+`. Write rule values in international form (`+31...`) to stay independent of that setting.
 - `menu`: after `max_timeout_attempts` timeouts or `max_invalid_attempts` wrong digits the menu plays `final_failure_audio_id` and hangs up. There is no timeout or invalid edge, so an after-hours menu cannot loop back or fall through.
-- Editor save rules the import does not check (validate warns): every menu branch needs an edge (or a subflow), `start`, `get_digits`, `business_hours` and `conference` need at least one outgoing edge, a flow that is only start to hangup cannot be published.
+- Editor save rules the import does not check (validate warns): every menu branch needs an edge (or a subflow), `start`, `get_digits`, `business_hours` and `conference` need at least one outgoing edge, `caller_match` needs an edge for `default`, a flow that is only start to hangup cannot be published.
 
 ## Placeholders
 
@@ -109,6 +113,8 @@ Real ids belong to one installation, so a generated file cannot know them, but t
 Per-weekday hunt chain: one `business_hours` node per weekday (only that day enabled, same hours). `open` goes to that day's `hunt`, `closed` goes to the next day's `business_hours`. The last day's `closed` leaves the chain. Each hunt has `on_no_answer` pointing at a `voicemail` node (no edge from hunt to voicemail). Hunt has no outgoing edge. This is the structure of `examples/weekday-hunt-closed-menu.json`. A single `business_hours` with all days works when hours are identical on every day.
 
 Weekend versus weekday evening: after the last weekday node add one more `business_hours` (`bh_weekend`) with only Saturday and Sunday enabled, `00:00` to `23:59`. `open` plays the weekend message, `closed` plays the evening message, both lead to the same closed menu.
+
+Route by caller number: `start` to `caller_match`. Give each special caller group a rule (`exact` for known numbers, `prefix` for an area, `anonymous` for withheld numbers) and one edge per rule branch, each to its own `hunt` or `voicemail`. The `default` edge handles every other caller, so always draw it. Put the most specific rule first, because the first match wins. This is the structure of `examples/caller-match.json`. To combine it with opening hours, chain it: `caller_match` `default` to a `business_hours` node.
 
 Closed menu: `play_audio` (message) then `menu` with branches `1` and `2`, for example `1` to `callback` (`number_source: "ani"`) and `2` to `voicemail`. Both are terminal, so the menu ends the flow. Remember timeout and invalid digits hang up.
 
@@ -133,5 +139,6 @@ Greeting then agents: `start` to `play_audio` to `hunt` (see `examples/minimal.j
 - Business hours cannot cross midnight, and each node evaluates the clock in its own timezone.
 - `hunt` to `voicemail` and `transfer` to `voicemail` edges are rejected, use `on_no_answer`.
 - Transfer, voicemail, callback, queue_login, hangup cannot have outgoing edges.
+- `caller_match` compares the caller number the carrier delivers. A withheld caller shows as `anonymous` or `unknown`, an absent caller id as empty, all handled by the `anonymous` match.
 - Business hours edges are `open` and `closed` (older docs called them `in-hours` and `out-of-hours`).
 - A `queue` result without an edge ends the call as failed (read from `runtime.ts`, not run). Add edges for `connected`, `timeout` and `abandoned`. `conference` participants are not covered here.

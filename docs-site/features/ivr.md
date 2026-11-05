@@ -106,6 +106,32 @@ Routes the call based on configured weekly schedules.
 - **Edges:** Two edges, `open` (in hours) and `closed` (out of hours)
 - **Limitation:** Midnight-crossing schedules (for example, 22:00–02:00) are not currently supported
 
+### Caller Match
+
+Routes the call based on the caller's number, for example to send VIP customers to their own agent or to treat withheld numbers separately.
+
+- **Config:** An ordered list of rules. Each rule has a `branch` key, an optional `label` shown on the canvas, a `match` type and a `value`.
+
+  ```json
+  { "rules": [
+    { "branch": "vip", "label": "VIP customer", "match": "exact", "value": "+31612345678, 0687654321" },
+    { "branch": "amsterdam", "label": "Amsterdam", "match": "prefix", "value": "+3120" },
+    { "branch": "anonymous", "label": "Withheld", "match": "anonymous" }
+  ] }
+  ```
+
+- **Match types:**
+  - `exact`: the caller number equals one of the numbers in `value`.
+  - `prefix`: the caller number starts with one of the prefixes in `value`.
+  - `anonymous`: the caller id is empty, `anonymous`, `unknown`, `restricted`, `private` or not a number. `value` is not used.
+- **Several numbers:** For `exact` and `prefix`, `value` can hold several numbers separated by commas or new lines.
+- **Number notation:** Caller numbers and rule values are normalised before they are compared, so `0612345678`, `+31 6 12345678`, `0031612345678` and `31612345678` (the form some providers deliver) all match the same rule. A number that starts with a single `0` gets the country code of the outbound dialing setting (Settings, outbound country code). A number that starts with the international prefix of that setting (default `00`) gets a `+`. Digits without a leading `0` and with at least 9 digits are taken as an international number without the `+`. Shorter numbers such as extensions are compared as they are.
+- **Behaviour:** Rules are checked from top to bottom and the first match decides the branch. No match uses `default`. The node plays no audio and continues immediately.
+- **Edges:** One edge per rule, with the rule's `branch` key as condition, plus an edge for `default`. A rule without an edge follows the `default` edge. The flow editor requires a route for `default`.
+- **Rules:** Branch keys are 1 to 32 letters, digits, `_` or `-`, must be unique in the node and cannot be `default`. At least one rule is required. Every `exact` and `prefix` rule needs at least one number.
+- **Call log:** The matched branch key is stored as the exit branch of the node, so the execution trace of a call shows which rule matched.
+- **Limitation:** The country code is one installation-wide setting. A national number without a leading `0` (for example a US 10-digit number) is not recognised as national, write such rules in international notation.
+
 ### Transfer
 
 Bridges the caller to a SIP extension or a PSTN number via the configured trunk.

@@ -2,11 +2,12 @@
  * Walks a Callytics flow the way the stasis runtime would and prints the path.
  *
  * Usage:
- *   simulate.ts <file.json> --at <ISO datetime> [--tz <IANA zone>] [--digits 1,2] [--hunt answered|no-answer]
+ *   simulate.ts <file.json> [--at <ISO datetime>] [--tz <IANA zone>] [--caller <number>] [--country <code>] [--digits 1,2] [--hunt answered|no-answer]
  *
  * Uses the real edge resolver and business hours evaluation from stasis. It does NOT play audio,
  * talk to Asterisk, dial anyone, or touch a database. Per node type it assumes:
- *   business_hours  evaluated against --at
+ *   business_hours  evaluated against --at (default: now)
+ *   caller_match    evaluated against --caller (default: unknown, a withheld caller id)
  *   menu, get_digits consume the digits from --digits in order (no digit left means the caller times out)
  *   hunt, transfer  --hunt answered gives "done", --hunt no-answer follows on_no_answer (default: no-answer)
  *   queue           --hunt answered gives "connected", otherwise "timeout"
@@ -14,6 +15,8 @@
  */
 import type { ParsedFlowDocument } from '../../backend/src/flows/flow-document';
 import { evaluateBusinessHours } from '../../stasis/src/executors/business_hours.executor';
+import { evaluateCallerMatch } from '../../stasis/src/lib/callerMatch';
+import { DEFAULT_OUTBOUND_NUMBER_SETTINGS, type OutboundNumberSettings } from '../../stasis/src/lib/outboundNumber';
 import { resolveNextEdge } from '../../stasis/src/engine/edgeResolver';
 import { errorMessage, loadFlowDocument } from './load-flow';
 
@@ -29,6 +32,8 @@ const POST_COMPLETION_ROUTABLE = new Set(['voicemail', 'callback', 'transfer', '
 interface Options {
   file: string;
   at: Date;
+  caller: string;
+  numberSettings: OutboundNumberSettings;
   digits: string[];
   huntAnswered: boolean;
 }
@@ -90,19 +95,22 @@ function parseAt(value: string, timeZone: string | undefined): Date {
 function parseArgs(argv: string[]): Options {
   const file = argv[0];
   if (!file || file.startsWith('--')) {
-    throw new Error('Usage: simulate <file.json> --at <ISO datetime> [--tz <zone>] [--digits 1,2] [--hunt answered|no-answer]');
+    throw new Error('Usage: simulate <file.json> [--at <ISO datetime>] [--tz <zone>] [--caller <number>] [--country <code>] [--digits 1,2] [--hunt answered|no-answer]');
   }
   const flag = (name: string): string | undefined => {
     const index = argv.indexOf(`--${name}`);
     return index >= 0 ? argv[index + 1] : undefined;
   };
   const at = flag('at');
-  if (!at) throw new Error('--at <ISO datetime> is required');
+  const country = flag('country');
+  if (country !== undefined && !/^[1-9]\d{0,2}$/.test(country)) throw new Error('--country must be a country code of 1 to 3 digits, for example 31');
   const hunt = flag('hunt') ?? 'no-answer';
   if (!['answered', 'no-answer'].includes(hunt)) throw new Error('--hunt must be answered or no-answer');
   return {
     file,
-    at: parseAt(at, flag('tz')),
+    at: at ? parseAt(at, flag('tz')) : new Date(),
+    caller: flag('caller') ?? 'unknown',
+    numberSettings: country ? { ...DEFAULT_OUTBOUND_NUMBER_SETTINGS, countryCode: country } : DEFAULT_OUTBOUND_NUMBER_SETTINGS,
     digits: (flag('digits') ?? '').split(',').map((digit) => digit.trim()).filter(Boolean),
     huntAnswered: hunt === 'answered',
   };
@@ -121,7 +129,7 @@ function simulate(document: ParsedFlowDocument, options: Options): void {
   const menuAttempts = new Map<string, number>();
 
   console.log(`Simulating "${document.name}" at ${options.at.toISOString()}`);
-  console.log(`Digits: [${options.digits.join(', ')}], hunt/transfer/queue: ${options.huntAnswered ? 'answered' : 'no answer'}\n`);
+  console.log(`Caller: "${options.caller}", digits: [${options.digits.join(', ')}], hunt/transfer/queue: ${options.huntAnswered ? 'answered' : 'no answer'}\n`);
 
   const outcome = (text: string): void => console.log(`\nEnd: ${text}`);
 
@@ -153,6 +161,12 @@ function simulate(document: ParsedFlowDocument, options: Options): void {
         result = evaluateBusinessHours(config, options.at);
         note = ` (${describeTime(options.at, String(config.timezone || 'UTC'))})`;
         break;
+      case 'caller_match': {
+        const match = evaluateCallerMatch(config, options.caller, options.numberSettings);
+        result = match.branch;
+        note = ` (caller ${match.normalizedCaller ?? 'anonymous'})`;
+        break;
+      }
       case 'menu': {
         const branches: string[] = (config.branches ?? []).map(String);
         const maxInvalid = Math.max(1, Number(config.max_invalid_attempts) || DEFAULT_MENU_ATTEMPTS);

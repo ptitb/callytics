@@ -1744,3 +1744,73 @@ describe("FlowsService", () => {
     });
   });
 });
+
+describe("caller_match validation", () => {
+  const callerMatchNode = (rules: unknown) => ({
+    nodeKey: "cm1",
+    type: "caller_match",
+    config: { rules },
+  });
+  const validRules = [
+    { branch: "vip", label: "VIP customer", match: "exact", value: "+31612345678, 0687654321" },
+    { branch: "amsterdam", match: "prefix", value: "+3120\n+3129" },
+    { branch: "anonymous", label: "Withheld", match: "anonymous" },
+  ];
+
+  describe("validateNodeConfig", () => {
+    it("accepts valid rules", () => {
+      expect(() => validateNodeConfig(callerMatchNode(validRules))).not.toThrow();
+    });
+
+    it.each([
+      ["missing rules", undefined],
+      ["empty rules", []],
+      ["invalid branch key", [{ branch: "vip customer", match: "anonymous" }]],
+      ["branch key longer than 32 characters", [{ branch: "a".repeat(33), match: "anonymous" }]],
+      ["reserved default branch", [{ branch: "default", match: "anonymous" }]],
+      ["duplicate branch keys", [{ branch: "a", match: "anonymous" }, { branch: "a", match: "anonymous" }]],
+      ["unknown match type", [{ branch: "a", match: "regex", value: "1" }]],
+      ["exact rule without value", [{ branch: "a", match: "exact", value: " " }]],
+      ["prefix rule with a non-number", [{ branch: "a", match: "prefix", value: "+31, abc" }]],
+    ])("rejects %s", (_name, rules) => {
+      expect(() => validateNodeConfig(callerMatchNode(rules))).toThrow(BadRequestException);
+    });
+  });
+
+  describe("validateEdgesConfig", () => {
+    const nodes = [
+      { nodeKey: "start", type: "start", config: {} },
+      callerMatchNode(validRules),
+      { nodeKey: "p1", type: "play_audio", config: { audio_file_id: 1 } },
+      { nodeKey: "gd1", type: "get_digits", config: {} },
+    ];
+
+    it("allows start to connect to caller_match", () => {
+      const edges = [{ sourceNodeKey: "start", targetNodeKey: "cm1", condition: null }];
+      expect(() => validateEdgesConfig(edges, nodes)).not.toThrow();
+    });
+
+    it("allows edges for rule branches and default", () => {
+      const edges = [
+        { sourceNodeKey: "cm1", targetNodeKey: "p1", condition: "vip" },
+        { sourceNodeKey: "cm1", targetNodeKey: "p1", condition: "default" },
+      ];
+      expect(() => validateEdgesConfig(edges, nodes)).not.toThrow();
+    });
+
+    it("allows caller_match to connect to get_digits like business_hours", () => {
+      const edges = [{ sourceNodeKey: "cm1", targetNodeKey: "gd1", condition: "default" }];
+      expect(() => validateEdgesConfig(edges, nodes)).not.toThrow();
+    });
+
+    it("rejects an edge without condition", () => {
+      const edges = [{ sourceNodeKey: "cm1", targetNodeKey: "p1", condition: null }];
+      expect(() => validateEdgesConfig(edges, nodes)).toThrow(BadRequestException);
+    });
+
+    it("rejects an edge whose condition is not a rule branch", () => {
+      const edges = [{ sourceNodeKey: "cm1", targetNodeKey: "p1", condition: "unknown_branch" }];
+      expect(() => validateEdgesConfig(edges, nodes)).toThrow(BadRequestException);
+    });
+  });
+});

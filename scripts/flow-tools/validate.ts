@@ -143,6 +143,18 @@ function collectEditorWarnings(level: FlowLevel): string[] {
       }
     }
 
+    if (node.type === 'caller_match') {
+      const branches: string[] = Array.isArray(config.rules) ? config.rules.map((rule: any) => String(rule?.branch)) : [];
+      if (!edges.some((edge) => (edge.condition ?? edge.branchKey) === 'default')) {
+        warnings.push(`${prefix}, ${name}: no "default" edge, a caller that matches no rule fails (editor refuses to save)`);
+      }
+      for (const branch of branches) {
+        if (!edges.some((edge) => (edge.condition ?? edge.branchKey) === branch)) {
+          warnings.push(`${prefix}, ${name}: rule "${branch}" has no edge, matching callers follow the default edge`);
+        }
+      }
+    }
+
     if (node.type === 'hunt' && String(config.strategy || 'sequential').toLowerCase() === 'order') {
       const orders = (config.destinations ?? []).map((entry: any) => Number(entry?.order));
       if (orders.some((order: number) => !Number.isInteger(order) || order <= 0) || new Set(orders).size !== orders.length) {

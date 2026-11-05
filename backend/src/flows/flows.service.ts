@@ -149,10 +149,13 @@ const TIMEOUT_MIN_MS = 1000;
 const TIMEOUT_MAX_MS = 120000;
 const TIMEOUT_CAPABLE_NODE_TYPES = new Set(['get_digits', 'menu', 'transfer', 'webhook', 'queue_login', 'callback']);
 const TERMINAL_NODE_TYPES = new Set(['hangup', 'transfer', 'voicemail', 'callback', 'queue_login']);
-const START_ALLOWED_TARGET_TYPES = new Set(['play_audio', 'menu', 'business_hours', 'transfer', 'hunt', 'queue', 'queue_login', 'hangup', 'conference', 'webhook', 'callback', 'voicemail']);
-const GET_DIGITS_ALLOWED_SOURCE_TYPES = new Set(['start', 'play_audio', 'menu', 'business_hours', 'webhook']);
+const START_ALLOWED_TARGET_TYPES = new Set(['play_audio', 'menu', 'business_hours', 'caller_match', 'transfer', 'hunt', 'queue', 'queue_login', 'hangup', 'conference', 'webhook', 'callback', 'voicemail']);
+const GET_DIGITS_ALLOWED_SOURCE_TYPES = new Set(['start', 'play_audio', 'menu', 'business_hours', 'caller_match', 'webhook']);
 const QUEUE_LOGIN_ALLOWED_SOURCE_TYPES = new Set(['start', 'menu', 'play_audio', 'get_digits']);
 const VOICEMAIL_BLOCKED_SOURCE_TYPES = new Set(['queue_login', 'hunt', 'transfer', 'queue']);
+const CALLER_MATCH_TYPES = ['exact', 'prefix', 'anonymous'];
+const CALLER_MATCH_BRANCH_PATTERN = /^[A-Za-z0-9_-]{1,32}$/;
+const CALLER_MATCH_NUMBER_PATTERN = /^\+?\d[\d\s\-.()]*$/;
 const IMMEDIATE_HANGUP_PUBLISH_MESSAGE =
   'This flow hangs up immediately on every caller. Add at least one action node between Start and Hangup before publishing.';
 
@@ -210,6 +213,51 @@ function isPositiveId(value: unknown): boolean {
 
 function isValidDigitConditionValue(value: string): boolean {
   return /^(?:\d{1,2}|\*|#|timeout|invalid|default)$/.test(value.trim());
+}
+
+function readCallerMatchRules(config: Record<string, unknown> | undefined): Array<Record<string, unknown>> {
+  const rules = config?.rules;
+  return Array.isArray(rules) ? rules as Array<Record<string, unknown>> : [];
+}
+
+function validateCallerMatchConfig(node: FlowNodeInput): void {
+  const rules = node.config?.rules;
+  if (!Array.isArray(rules) || rules.length === 0) {
+    throw new BadRequestException(`Node ${node.nodeKey}: rules must have at least one entry`);
+  }
+  const seenBranches = new Set<string>();
+  for (const rule of readCallerMatchRules(node.config)) {
+    const branch = String(rule?.branch ?? '');
+    if (!CALLER_MATCH_BRANCH_PATTERN.test(branch)) {
+      throw new BadRequestException(`Node ${node.nodeKey}: rule branch must be 1-32 letters, digits, _ or -`);
+    }
+    if (branch === 'default') {
+      throw new BadRequestException(`Node ${node.nodeKey}: rule branch must not be default`);
+    }
+    if (seenBranches.has(branch)) {
+      throw new BadRequestException(`Node ${node.nodeKey}: rule branch ${branch} is used more than once`);
+    }
+    seenBranches.add(branch);
+
+    if (rule.label !== undefined && typeof rule.label !== 'string') {
+      throw new BadRequestException(`Node ${node.nodeKey}: rule ${branch} label must be text`);
+    }
+    const match = String(rule.match ?? '');
+    if (!CALLER_MATCH_TYPES.includes(match)) {
+      throw new BadRequestException(`Node ${node.nodeKey}: rule ${branch} match must be exact, prefix or anonymous`);
+    }
+    if (match === 'anonymous') {
+      continue;
+    }
+    const entries = String(rule.value ?? '').split(/[,\n]/).map((entry) => entry.trim()).filter(Boolean);
+    if (entries.length === 0) {
+      throw new BadRequestException(`Node ${node.nodeKey}: rule ${branch} needs at least one number`);
+    }
+    const invalidEntry = entries.find((entry) => !CALLER_MATCH_NUMBER_PATTERN.test(entry));
+    if (invalidEntry) {
+      throw new BadRequestException(`Node ${node.nodeKey}: rule ${branch} has an invalid number: ${invalidEntry}`);
+    }
+  }
 }
 
 function isValidMenuBranchValue(value: string): boolean {
@@ -409,6 +457,9 @@ export function validateNodeConfig(node: FlowNodeInput): void {
       throw new BadRequestException(`Node ${node.nodeKey}: start_audio_id is required`);
     }
   }
+  if (node.type === 'caller_match') {
+    validateCallerMatchConfig(node);
+  }
   if (node.type === 'business_hours') {
     const schedule = node.config?.schedule;
     const hasEnabledSchedule = schedule && typeof schedule === 'object' && !Array.isArray(schedule)
@@ -501,13 +552,28 @@ export function validateEdgesConfig(
       throw new BadRequestException(`Edge from ${edge.sourceNodeKey} to ${edge.targetNodeKey}: start cannot connect to ${targetType}`);
     }
     if (targetType === 'get_digits' && !GET_DIGITS_ALLOWED_SOURCE_TYPES.has(sourceType)) {
-      throw new BadRequestException(`Edge to ${edge.targetNodeKey}: get_digits can only receive from start, play_audio, menu, business_hours, or webhook`);
+      throw new BadRequestException(`Edge to ${edge.targetNodeKey}: get_digits can only receive from start, play_audio, menu, business_hours, caller_match, or webhook`);
     }
     if (targetType === 'queue_login' && !QUEUE_LOGIN_ALLOWED_SOURCE_TYPES.has(sourceType)) {
       throw new BadRequestException(`Edge to ${edge.targetNodeKey}: queue_login can only receive from start, menu, play_audio, or get_digits`);
     }
     if (targetType === 'voicemail' && VOICEMAIL_BLOCKED_SOURCE_TYPES.has(sourceType)) {
       throw new BadRequestException(`Edge to ${edge.targetNodeKey}: voicemail cannot receive from ${sourceType}`);
+    }
+    if (sourceType === 'caller_match') {
+      const condition = String(edge.condition ?? '').trim();
+      const sourceNode = nodes.find((n) => n.nodeKey === edge.sourceNodeKey);
+      const branches = readCallerMatchRules(sourceNode?.config).map((rule) => String(rule?.branch ?? ''));
+      if (!condition) {
+        throw new BadRequestException(
+          `Edge from ${edge.sourceNodeKey} to ${edge.targetNodeKey}: condition is required for caller_match source nodes`,
+        );
+      }
+      if (condition !== 'default' && !branches.includes(condition)) {
+        throw new BadRequestException(
+          `Edge from ${edge.sourceNodeKey} to ${edge.targetNodeKey}: caller_match condition must be a rule branch or default`,
+        );
+      }
     }
     if (sourceType && BRANCHING_NODE_TYPES.has(sourceType)) {
       if (!edge.condition || !String(edge.condition).trim()) {

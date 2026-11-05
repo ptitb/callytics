@@ -12,6 +12,8 @@ module.exports = {
     'nodes/hunt.executor.ts',
     'sipTrafficMonitor.ts',
     'executors/business_hours.executor.ts',
+    'executors/caller_match.executor.ts',
+    'lib/callerMatch.ts',
     'executors/voicemail.executor.ts',
     'executors/webhook.executor.ts',
     'executors/queue.executor.ts',

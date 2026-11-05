@@ -1,0 +1,78 @@
+{
+  "format": "callytics-flow",
+  "version": 1,
+  "name": "Route by caller number",
+  "description": "VIP customers and Amsterdam callers ring their own extension, withheld numbers go to voicemail, everyone else rings reception. Replace the REPLACE-ME values and the placeholder audio id 999999 before use.",
+  "nodes": [
+    { "nodeKey": "start", "type": "start", "label": "Start", "config": { "flow_default_timeout_ms": 10000 }, "positionX": 0, "positionY": 0 },
+    {
+      "nodeKey": "match",
+      "type": "caller_match",
+      "label": "Who is calling",
+      "config": {
+        "rules": [
+          { "branch": "vip", "label": "VIP customer", "match": "exact", "value": "+31612345678, +31687654321" },
+          { "branch": "amsterdam", "label": "Amsterdam", "match": "prefix", "value": "+3120" },
+          { "branch": "anonymous", "label": "Withheld", "match": "anonymous" }
+        ]
+      },
+      "positionX": 0,
+      "positionY": 150
+    },
+    {
+      "nodeKey": "vip_hunt",
+      "type": "hunt",
+      "label": "Ring account manager",
+      "config": {
+        "destinations": [{ "target_type": "extension", "target_value": "REPLACE-ME" }],
+        "strategy": "sequential",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000
+      },
+      "positionX": -300,
+      "positionY": 300
+    },
+    {
+      "nodeKey": "amsterdam_hunt",
+      "type": "hunt",
+      "label": "Ring Amsterdam desk",
+      "config": {
+        "destinations": [{ "target_type": "extension", "target_value": "REPLACE-ME" }],
+        "strategy": "sequential",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000
+      },
+      "positionX": -100,
+      "positionY": 300
+    },
+    {
+      "nodeKey": "voicemail",
+      "type": "voicemail",
+      "label": "Voicemail (set intro audio)",
+      "config": { "mailbox_name": "main", "max_duration_seconds": 60, "start_audio_id": 999999 },
+      "positionX": 100,
+      "positionY": 300
+    },
+    {
+      "nodeKey": "reception_hunt",
+      "type": "hunt",
+      "label": "Ring reception",
+      "config": {
+        "destinations": [{ "target_type": "extension", "target_value": "REPLACE-ME" }],
+        "strategy": "sequential",
+        "attempt_timeout_ms": 20000,
+        "total_timeout_ms": 60000,
+        "on_no_answer": "voicemail"
+      },
+      "positionX": 300,
+      "positionY": 300
+    }
+  ],
+  "edges": [
+    { "sourceNodeKey": "start", "targetNodeKey": "match", "branchKey": "default" },
+    { "sourceNodeKey": "match", "targetNodeKey": "vip_hunt", "branchKey": "vip", "condition": "vip", "sourceHandle": "vip" },
+    { "sourceNodeKey": "match", "targetNodeKey": "amsterdam_hunt", "branchKey": "amsterdam", "condition": "amsterdam", "sourceHandle": "amsterdam" },
+    { "sourceNodeKey": "match", "targetNodeKey": "voicemail", "branchKey": "anonymous", "condition": "anonymous", "sourceHandle": "anonymous" },
+    { "sourceNodeKey": "match", "targetNodeKey": "reception_hunt", "branchKey": "default", "condition": "default", "sourceHandle": "default" }
+  ]
+}

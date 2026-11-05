@@ -4,6 +4,7 @@ import styles from './FlowCanvasEdge.module.css';
 interface EdgeData {
   branchKey?: string;
   condition?: string | null;
+  conditionLabel?: string;
   sourceNodeType?: string;
   isAsyncWebhookEdge?: boolean;
   parallelIndex?: number;
@@ -41,13 +42,13 @@ export function FlowCanvasEdge(props: EdgeProps<EdgeData>) {
 
   const isSubflowJump = Boolean(data?.isSubflowJump);
   const showLabel = isSubflowJump
-    || (data?.sourceNodeType === 'get_digits' && Boolean(data?.condition))
+    || ((data?.sourceNodeType === 'get_digits' || data?.sourceNodeType === 'caller_match') && Boolean(data?.condition))
     || data?.sourceNodeType === 'hunt';
   const labelText = isSubflowJump
     ? String(data?.subflowJumpLabel || data?.branchKey || 'subflow jump')
     : data?.sourceNodeType === 'hunt'
       ? String(data?.branchKey || 'no answer')
-      : String(data?.condition || '');
+      : String(data?.conditionLabel || data?.condition || '');
 
   return (
     <>

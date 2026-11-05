@@ -3,6 +3,7 @@ import type { Edge, Node } from 'reactflow';
 import type { FlowNodeData } from '../../types';
 import { getFlow } from '../../lib/api';
 import { mapFlowToNodes, mapFlowToEdges, sanitizeMenuBranchFlows } from '../../pages/FlowEditorPage.helpers';
+import { callerMatchBranchLabel, readCallerMatchRules } from '../../lib/callerMatch';
 import styles from './FlowSimulator.module.css';
 
 type BuilderEdgeData = {
@@ -90,7 +91,7 @@ function isTerminalType(type: string): boolean {
 function branchTone(type: string): string {
   if (type === 'transfer' || type === 'play_audio' || type === 'webhook') return styles.dotInfo;
   if (type === 'queue_login' || type === 'voicemail' || type === 'callback') return styles.dotWarning;
-  if (type === 'queue' || type === 'conference' || type === 'business_hours' || type === 'menu') return styles.dotAccent;
+  if (type === 'queue' || type === 'conference' || type === 'business_hours' || type === 'caller_match' || type === 'menu') return styles.dotAccent;
   if (type === 'hangup') return styles.dotMuted;
   return styles.dotDefault;
 }
@@ -542,6 +543,20 @@ export function FlowSimulator({ nodes, edges, onClose, onSubflowEnter, onSubflow
             </div>
           );
         })() : null}
+
+        {type === 'caller_match' ? (
+          <div>
+            <div className={styles.cardLabel}>pick the caller to route</div>
+            <div className={styles.branchList}>
+              {readCallerMatchRules(cfg).map((rule) => (
+                <button key={rule.branch} className={styles.branchButton} onClick={() => advanceToBranch(rule.branch)} type="button">
+                  <strong>{callerMatchBranchLabel(rule)}</strong>
+                </button>
+              ))}
+              <button className={styles.branchButton} onClick={() => advanceToBranch('default')} type="button"><strong>default</strong></button>
+            </div>
+          </div>
+        ) : null}
 
         {type === 'webhook' ? (
           <div>

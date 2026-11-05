@@ -640,4 +640,74 @@ describe('NodeConfigPanel', () => {
     fireEvent.click(screen.getByText('select PSTN operator'));
     expect(screen.getByText('Main Operator — +94770000000')).toBeInTheDocument();
   });
+
+  describe('caller_match', () => {
+    const rules = [
+      { branch: 'vip', label: 'VIP customer', match: 'exact', value: '+31612345678' },
+      { branch: 'amsterdam', label: 'Amsterdam', match: 'prefix', value: '+3120' },
+    ];
+
+    it('renders the rule editor for a caller_match node', () => {
+      render(<NodeConfigPanel {...baseProps} selectedNode={mockNode('caller_match', { rules })} />);
+
+      expect(screen.getByLabelText('branch key of rule 1')).toHaveValue('vip');
+      expect(screen.getByLabelText('numbers of rule 2')).toHaveValue('+3120');
+    });
+
+    it('sends rule changes to the dedicated handler so edges stay in step', () => {
+      const onCallerMatchRulesChange = vi.fn();
+      render(
+        <NodeConfigPanel
+          {...baseProps}
+          selectedNode={mockNode('caller_match', { rules })}
+          onCallerMatchRulesChange={onCallerMatchRulesChange}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'add rule' }));
+
+      expect(onCallerMatchRulesChange).toHaveBeenCalledTimes(1);
+      expect(onCallerMatchRulesChange.mock.calls[0][0]).toHaveLength(3);
+    });
+
+    it('falls back to a plain config change without the dedicated handler', () => {
+      const onConfigValueChange = vi.fn();
+      render(
+        <NodeConfigPanel
+          {...baseProps}
+          selectedNode={mockNode('caller_match', { rules })}
+          onConfigValueChange={onConfigValueChange}
+        />,
+      );
+
+      fireEvent.click(screen.getByRole('button', { name: 'add rule' }));
+
+      expect(onConfigValueChange).toHaveBeenCalledWith('rules', expect.any(Array));
+    });
+
+    it('lets an outgoing edge pick a rule branch by its label, or default', () => {
+      const sourceNode = mockNode('caller_match', { rules });
+      const edge = {
+        id: 'e1',
+        source: 'node-1',
+        target: 'node-2',
+        data: { branchKey: 'vip', condition: 'vip', sourceNodeType: 'caller_match' },
+      } as Edge<{ branchKey: string | null; condition: string | null; sourceNodeType: string }>;
+      const onEdgeConditionChange = vi.fn();
+      render(
+        <NodeConfigPanel
+          {...baseProps}
+          selectedEdge={edge}
+          selectedEdgeSourceNode={sourceNode}
+          onEdgeConditionChange={onEdgeConditionChange}
+        />,
+      );
+
+      const select = screen.getByRole('combobox');
+      expect(screen.getByRole('option', { name: 'VIP customer' })).toBeInTheDocument();
+      expect(screen.getByRole('option', { name: 'default' })).toBeInTheDocument();
+      fireEvent.change(select, { target: { value: 'amsterdam' } });
+      expect(onEdgeConditionChange).toHaveBeenCalledWith('amsterdam');
+    });
+  });
 });

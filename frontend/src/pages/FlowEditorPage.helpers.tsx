@@ -7,6 +7,7 @@ import type {
   FlowSnapshotSubflow,
   SubmenuBranchFlow,
 } from '../types';
+import { createCallerMatchRule, readCallerMatchRules, validateCallerMatchRules } from '../lib/callerMatch';
 import styles from './FlowEditorPage.module.css';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -59,6 +60,7 @@ export const palette: Array<{ type: BuilderNodeType; label: string }> = [
   { type: 'get_digits', label: 'get digits' },
   { type: 'menu', label: 'Menu Group' },
   { type: 'business_hours', label: 'Business Hours' },
+  { type: 'caller_match', label: 'Caller Match' },
   { type: 'transfer', label: 'transfer' },
   { type: 'voicemail', label: 'Voicemail' },
   { type: 'hunt', label: 'Hunt Group' },
@@ -522,6 +524,9 @@ export function validateNodeConfigurations(
             issues.push('at least one schedule is required');
           }
           break;
+        case 'caller_match':
+          issues.push(...validateCallerMatchRules(readCallerMatchRules(config)));
+          break;
         default:
           break;
       }
@@ -606,6 +611,7 @@ export function typeConfig(type: BuilderNodeType): Record<string, unknown> {
         sunday: { enabled: false, open: '09:00', close: '17:00' },
       },
     };
+  if (type === 'caller_match') return { rules: [createCallerMatchRule([])] };
   if (type === 'transfer')
     return { target_type: 'extension', target_value: '', timeout_ms: 30000, on_no_answer: '', send_to_webhook: false };
   if (type === 'voicemail')
@@ -939,6 +945,15 @@ export async function validateFlowBeforeSave(
       return `Menu "${node.data.label || node.id}" is missing route(s) for: ${missing.join(', ')}.`;
   }
   for (const node of nodes) {
+    if (node.data.type !== 'caller_match') continue;
+    // Rules without a route fall back to default at runtime, so the default branch must lead somewhere.
+    const hasDefaultRoute = (sourceOutgoing.get(node.id) || []).some(
+      (item) => String(item.condition || item.branchKey || '').trim() === 'default',
+    );
+    if (!hasDefaultRoute)
+      return `Caller match "${node.data.label || node.id}" needs a route for the default branch.`;
+  }
+  for (const node of nodes) {
     if (
       node.data.type === 'hangup' ||
       node.data.type === 'group' ||
@@ -1052,7 +1067,7 @@ export function mapFlowToNodes(flow: FlowDetail): Array<Node<FlowNodeData>> {
     .filter((node) => node.type !== 'group')
     .map((node) => ({
       id: node.nodeKey,
-      type: node.type === 'hunt' ? 'huntNode' : node.type === 'menu' ? 'menuNode' : 'flowNode',
+      type: node.type === 'hunt' ? 'huntNode' : node.type === 'menu' ? 'menuNode' : node.type === 'caller_match' ? 'callerMatchNode' : 'flowNode',
       position: { x: node.positionX, y: node.positionY },
       data: {
         label: node.label || node.nodeKey,
@@ -1088,7 +1103,7 @@ export function mapFlowToEdges(flow: FlowDetail): Edge<BuilderEdgeData>[] {
           ? edge.condition || edge.branchKey || undefined
           : sourceNodeType === 'get_digits'
             ? edge.condition || undefined
-            : sourceNodeType === 'business_hours'
+            : sourceNodeType === 'business_hours' || sourceNodeType === 'caller_match'
               ? edge.condition || edge.branchKey || undefined
               : undefined);
       return {
@@ -1418,6 +1433,8 @@ export function minimapNodeColor(node: Node<FlowNodeData>): string {
       return 'var(--color-warning)';
     case 'business_hours':
       return 'var(--accent)';
+    case 'caller_match':
+      return 'var(--accent)';
     case 'transfer':
       return 'var(--color-info)';
     case 'voicemail':
@@ -1454,6 +1471,20 @@ export function renderPaletteIcon(type: BuilderNodeType) {
         >
           <circle cx="8" cy="8" r="5.5" />
           <path d="M8 4.5V8L10.5 9.5" />
+        </svg>
+      </span>
+    );
+  }
+
+  if (type === 'caller_match') {
+    return (
+      <span className={styles.paletteIconWrap} aria-hidden="true">
+        <svg
+          viewBox="0 0 16 16"
+          focusable="false"
+          className={styles.paletteIconSvg}
+        >
+          <path d="M3 3.5h3l1 3-1.5 1a7 7 0 0 0 3 3l1-1.5 3 1v3a1.5 1.5 0 0 1-1.5 1.5A10 10 0 0 1 1.5 5 1.5 1.5 0 0 1 3 3.5Z" />
         </svg>
       </span>
     );

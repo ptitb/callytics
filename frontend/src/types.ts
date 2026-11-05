@@ -184,6 +184,7 @@ export type BuilderNodeType =
   | 'get_digits'
   | 'menu'
   | 'business_hours'
+  | 'caller_match'
   | 'voicemail'
   | 'hangup'
   | 'transfer'
@@ -194,6 +195,20 @@ export type BuilderNodeType =
   | 'queue'
   | 'conference'
   | 'callback';
+
+export type CallerMatchType = 'exact' | 'prefix' | 'anonymous';
+
+export interface CallerMatchRule {
+  branch: string;
+  label: string;
+  match: CallerMatchType;
+  /** Comma or newline separated numbers. Empty for the anonymous match. */
+  value: string;
+}
+
+export interface CallerMatchNodeConfig {
+  rules: CallerMatchRule[];
+}
 
 export type TransferTargetType = 'extension' | 'pstn' | 'sip_uri';
 

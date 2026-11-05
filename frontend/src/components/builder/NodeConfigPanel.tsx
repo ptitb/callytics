@@ -1,12 +1,14 @@
 import { useEffect, useState } from 'react';
 import type { Edge, Node } from 'reactflow';
-import type { AudioFileItem, BuilderNodeType, CallbackNodeConfig, ConferenceNodeConfig, ContactNumber, ExtensionItem, FlowNodeData, OperatorItem, QueueItem, SipTrunkItem, TransferNodeConfig, WebhookNodeConfig } from '../../types';
+import type { AudioFileItem, BuilderNodeType, CallbackNodeConfig, CallerMatchRule, ConferenceNodeConfig, ContactNumber, ExtensionItem, FlowNodeData, OperatorItem, QueueItem, SipTrunkItem, TransferNodeConfig, WebhookNodeConfig } from '../../types';
 import { getWebhookNodeDeliveries } from '../../lib/api';
 import { getMediaBaseUrl } from '../../lib/backendBaseUrl';
 import { formatDateTime } from '../../lib/time';
 import { SearchableSelect } from '../common/SearchableSelect';
 import { AudioPreviewPlayer } from '../audio/AudioPreviewPlayer';
 import { HuntConfigPanel } from '../panels/HuntConfigPanel';
+import { CallerMatchConfigPanel, type CallerMatchRename } from '../panels/CallerMatchConfigPanel';
+import { callerMatchBranchLabel, readCallerMatchRules } from '../../lib/callerMatch';
 import styles from './NodeConfigPanel.module.css';
 import pageStyles from '../../pages/FlowEditorPage.module.css';
 import {
@@ -56,6 +58,8 @@ export interface NodeConfigPanelProps {
   onConfigReplace: (nextConfig: Record<string, unknown>) => void;
   onEdgeConditionChange: (value: string | null) => void;
   onMenuBranchToggle: (branch: string, checked: boolean) => void;
+  /** Updates the rules of a caller_match node and keeps its edges in step. Falls back to a plain config change. */
+  onCallerMatchRulesChange?: (rules: CallerMatchRule[], rename?: CallerMatchRename) => void;
   onOpenSubmenuAction?: (nodeId: string, branch?: string) => void;
   onRenameSubmenu?: (flowId: number, name: string) => void | Promise<void>;
   
@@ -74,7 +78,7 @@ function nodeTypeColor(type: string): string {
   switch (type) {
     case 'start': case 'hangup': return 'var(--color-active)';
     case 'play_audio': return 'var(--primitive-cyan)';
-    case 'get_digits': case 'menu': case 'business_hours': return 'var(--accent)';
+    case 'get_digits': case 'menu': case 'business_hours': case 'caller_match': return 'var(--accent)';
     case 'transfer': case 'hunt': return 'var(--primitive-blue)';
     case 'queue': case 'queue_login': return 'var(--primitive-navy-300)';
     case 'conference': return 'var(--color-node-conference)';
@@ -96,6 +100,7 @@ export function NodeConfigPanel({
   onConfigReplace,
   onEdgeConditionChange,
   onMenuBranchToggle,
+  onCallerMatchRulesChange,
   onOpenSubmenuAction,
   onRenameSubmenu,
   menuExtra,
@@ -164,6 +169,12 @@ export function NodeConfigPanel({
       return menuBranches.map((value) => ({ value, label: value }));
     }
     if (selectedEdgeSourceNode.data.type === 'get_digits') return conditionOptions;
+    if (selectedEdgeSourceNode.data.type === 'caller_match') {
+      return [
+        ...readCallerMatchRules(selectedEdgeSourceNode.data.config).map((rule) => ({ value: rule.branch, label: callerMatchBranchLabel(rule) })),
+        { value: 'default', label: 'default' },
+      ];
+    }
     return [] as Array<{ value: string; label: string }>;
   })();
   return (
@@ -220,6 +231,20 @@ export function NodeConfigPanel({
                     : 'Use 1-2 digits, *, or #'}
                 </span>
               ) : null}
+            </label>
+          ) : null}
+          {selectedEdgeSourceNode?.data.type === 'caller_match' ? (
+            <label className={styles.field}>
+              <span className={styles.fieldLabel}>branch</span>
+              <select
+                className={styles.input}
+                value={selectedEdge.data?.condition || 'default'}
+                onChange={(event) => onEdgeConditionChange(event.target.value)}
+              >
+                {edgeConditionOptions.map((option) => (
+                  <option key={option.value} value={option.value}>{option.label}</option>
+                ))}
+              </select>
             </label>
           ) : null}
           <div className={styles.meta}>source: {selectedEdge.source}</div>
@@ -604,6 +629,19 @@ export function NodeConfigPanel({
                 </div>
               </div>
             </>
+          ) : null}
+
+          {selectedNode.data.type === 'caller_match' ? (
+            <CallerMatchConfigPanel
+              nodeId={selectedNode.id}
+              config={selectedConfig}
+              saveAttempted={saveAttempted}
+              onRulesChange={(rules, rename) => (
+                onCallerMatchRulesChange
+                  ? onCallerMatchRulesChange(rules, rename)
+                  : onConfigValueChange('rules', rules)
+              )}
+            />
           ) : null}
 
           {selectedNode.data.type === 'callback' ? (() => {

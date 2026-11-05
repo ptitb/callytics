@@ -13,6 +13,7 @@ import {
 } from 'reactflow';
 import type { BuilderNodeType, FlowNodeData } from '../types';
 import { layoutFlow } from '../utils/layoutFlow';
+import { callerMatchBranchLabel, createCallerMatchRule, readCallerMatchRules } from '../lib/callerMatch';
 
 // ─── Local type aliases (mirrored from FlowEditorPage to avoid exposing internals) ───
 
@@ -21,6 +22,8 @@ type BuilderEdgeData = {
   condition: string | null;
   sourceNodeType: string;
   isAsyncWebhookEdge?: boolean;
+  /** Rule label shown on the edge of a caller_match branch. */
+  conditionLabel?: string;
   isSubflowJump?: boolean;
   subflowJumpLabel?: string;
   onDelete?: (edgeId: string) => void;
@@ -41,6 +44,7 @@ const START_ALLOWED_TARGET_TYPES = new Set<BuilderNodeType>([
   'play_audio',
   'menu',
   'business_hours',
+  'caller_match',
   'transfer',
   'hunt',
   'queue',
@@ -56,6 +60,7 @@ const GET_DIGITS_ALLOWED_SOURCE_TYPES = new Set<BuilderNodeType>([
   'play_audio',
   'menu',
   'business_hours',
+  'caller_match',
   'webhook',
 ]);
 const QUEUE_LOGIN_ALLOWED_SOURCE_TYPES = new Set<BuilderNodeType>([
@@ -255,6 +260,12 @@ export function removeNodeFromGroup(
   return { ...childNode, parentId: undefined, extent: undefined, position: absolutePosition };
 }
 
+function resolveCallerMatchEdgeLabel(sourceNode: Node<FlowNodeData> | undefined, condition: string | null): string | undefined {
+  if (!sourceNode || !condition) return undefined;
+  const rule = readCallerMatchRules(sourceNode.data.config).find((item) => item.branch === condition);
+  return rule ? callerMatchBranchLabel(rule) : undefined;
+}
+
 export function attachEdgeMetadata(
   edges: Edge<BuilderEdgeData>[],
   nodes: Array<Node<FlowNodeData>>,
@@ -274,6 +285,9 @@ export function attachEdgeMetadata(
     const siblings = grouped.get(`${edge.source}|${edge.target}`) || [edge];
     const parallelIndex = siblings.findIndex((sibling) => sibling.id === edge.id);
     const isAsyncWebhookEdge = isWebhookConnection(sourceNodeType, targetNodeType);
+    const conditionLabel = sourceNodeType === 'caller_match'
+      ? resolveCallerMatchEdgeLabel(nodes.find((node) => node.id === edge.source), condition)
+      : undefined;
     return {
       ...edge,
       type: 'flowEdge',
@@ -285,6 +299,7 @@ export function attachEdgeMetadata(
         condition,
         sourceNodeType,
         isAsyncWebhookEdge,
+        conditionLabel,
         parallelIndex,
         parallelTotal: siblings.length,
         onDelete: () => onDelete(edge.id),
@@ -345,6 +360,7 @@ export function buildCanvasNode(type: BuilderNodeType, index: number): Node<Flow
     { type: 'get_digits', label: 'get digits' },
     { type: 'menu', label: 'Menu Group' },
     { type: 'business_hours', label: 'Business Hours' },
+    { type: 'caller_match', label: 'Caller Match' },
     { type: 'transfer', label: 'transfer' },
     { type: 'voicemail', label: 'Voicemail' },
     { type: 'hunt', label: 'Hunt Group' },
@@ -383,6 +399,7 @@ export function buildCanvasNode(type: BuilderNodeType, index: number): Node<Flow
         sunday: { enabled: false, open: '09:00', close: '17:00' },
       },
     };
+    if (t === 'caller_match') return { rules: [createCallerMatchRule([])] };
     if (t === 'transfer') return { target_type: 'extension', target_value: '', timeout_ms: 30000, on_no_answer: '', send_to_webhook: false };
     if (t === 'voicemail')
       return {
@@ -440,7 +457,7 @@ export function buildCanvasNode(type: BuilderNodeType, index: number): Node<Flow
   const key = `${type}-${Date.now()}-${index}`;
   return {
     id: key,
-    type: type === 'hunt' ? 'huntNode' : type === 'menu' ? 'menuNode' : type === 'group' ? 'group' : 'flowNode',
+    type: type === 'hunt' ? 'huntNode' : type === 'menu' ? 'menuNode' : type === 'caller_match' ? 'callerMatchNode' : type === 'group' ? 'group' : 'flowNode',
     position: { x: 120 + index * 40, y: 120 + index * 30 },
     data: {
       label: palette.find((item) => item.type === type)?.label || type,
@@ -722,6 +739,8 @@ export function useFlowCanvas(): UseFlowCanvasResult {
           ? menuBranch
           : sourceNodeType === 'business_hours'
           ? String(connection.sourceHandle || 'closed')
+          : sourceNodeType === 'caller_match'
+          ? String(connection.sourceHandle || 'default')
           : null;
       const branchKey =
         sourceNodeType === 'hunt'
@@ -730,6 +749,8 @@ export function useFlowCanvas(): UseFlowCanvasResult {
           ? menuBranch || 'default'
           : sourceNodeType === 'business_hours'
           ? String(connection.sourceHandle || 'closed')
+          : sourceNodeType === 'caller_match'
+          ? String(connection.sourceHandle || 'default')
           : condition || 'default';
       const newKey = makeEdgeKey(connection.source, connection.target, connection.sourceHandle, condition);
 

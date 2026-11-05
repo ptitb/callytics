@@ -27,7 +27,7 @@ import {
   renameFlow,
   updateFlow,
 } from '../lib/api';
-import type { BuilderNodeType, ContactNumber, ExtensionItem, FlowBreadcrumbItem, FlowDetail, FlowNodeData, FlowTree, FlowTreeChild, FlowVersionSummary, OperatorItem, QueueItem, SipTrunkItem } from '../types';
+import type { BuilderNodeType, CallerMatchRule, ContactNumber, ExtensionItem, FlowBreadcrumbItem, FlowDetail, FlowNodeData, FlowTree, FlowTreeChild, FlowVersionSummary, OperatorItem, QueueItem, SipTrunkItem } from '../types';
 import { ConfirmDialog } from '../components/ConfirmDialog/ConfirmDialog';
 import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
 import { FlowTreePanel } from '../components/FlowTreePanel';
@@ -36,7 +36,10 @@ import { FlowCanvasNode } from '../components/builder/FlowCanvasNode';
 import { FlowGroupNode } from '../components/builder/FlowGroupNode';
 import { HuntNode } from '../components/nodes/HuntNode';
 import { MenuGroupNode } from '../components/nodes/MenuGroupNode';
+import { CallerMatchNode } from '../components/nodes/CallerMatchNode';
 import { NodeConfigPanel } from '../components/builder/NodeConfigPanel';
+import type { CallerMatchRename } from '../components/panels/CallerMatchConfigPanel';
+import { syncCallerMatchEdges } from '../lib/callerMatch';
 import { FlowVersionPanel } from '../components/builder/FlowVersionPanel';
 import { FlowVersionDiffSummary, NodeDiff, EdgeDiff, ConfigChange } from '../components/builder/FlowVersionDiffSummary';
 import { FlowSimulator } from '../components/FlowSimulator/FlowSimulator';
@@ -86,6 +89,7 @@ const nodeTypes = {
   flowNode: FlowCanvasNode,
   huntNode: HuntNode,
   menuNode: MenuGroupNode,
+  callerMatchNode: CallerMatchNode,
   group: FlowGroupNode,
 };
 
@@ -117,7 +121,7 @@ const PALETTE_GROUPS: PaletteGroupDefinition[] = [
   {
     id: 'call-flow',
     label: 'CALL FLOW',
-    types: ['start', 'play_audio', 'get_digits', 'business_hours', 'hangup'],
+    types: ['start', 'play_audio', 'get_digits', 'business_hours', 'caller_match', 'hangup'],
   },
   {
     id: 'routing',
@@ -1071,6 +1075,19 @@ export function FlowEditorPage() {
       return { ...node, data: { ...node.data, config: nextConfig } };
     })));
   };
+  const handleCallerMatchRulesChange = (rules: CallerMatchRule[], rename?: CallerMatchRename) => {
+    if (!selectedNodeId) return;
+    userEditedRef.current = true;
+    const nextNodes = decorateEditorNodes(nodes.map((node) => (
+      node.id === selectedNodeId ? { ...node, data: { ...node.data, config: { ...node.data.config, rules } } } : node
+    )));
+    setNodes(nextNodes);
+    setEdges((current) => attachEdgeMetadata(
+      syncCallerMatchEdges(current, selectedNodeId, rules, rename),
+      nextNodes,
+      handleDeleteEdgeWithUserTracking,
+    ));
+  };
   const handleEdgeConditionChange = (value: string | null) => {
     if (!selectedEdgeId) return;
     const selectedEdgeRecord = edges.find((edge) => edge.id === selectedEdgeId) || null;
@@ -1085,7 +1102,7 @@ export function FlowEditorPage() {
       return;
     }
     userEditedRef.current = true;
-    setEdges((current) => attachEdgeMetadata(current.map((edge) => edge.id !== selectedEdgeId ? edge : { ...edge, data: { branchKey: trimmedValue || 'default', condition: trimmedValue, sourceNodeType: String(edge.data?.sourceNodeType || nodes.find((node) => node.id === edge.source)?.data.type || 'hangup'), onDelete: () => handleDeleteEdgeWithUserTracking(edge.id) } }), nodes, handleDeleteEdgeWithUserTracking));
+    setEdges((current) => attachEdgeMetadata(current.map((edge) => edge.id !== selectedEdgeId ? edge : { ...edge, sourceHandle: selectedSourceNode?.data.type === 'caller_match' ? trimmedValue || 'default' : edge.sourceHandle, data: { branchKey: trimmedValue || 'default', condition: trimmedValue, sourceNodeType: String(edge.data?.sourceNodeType || nodes.find((node) => node.id === edge.source)?.data.type || 'hangup'), onDelete: () => handleDeleteEdgeWithUserTracking(edge.id) } }), nodes, handleDeleteEdgeWithUserTracking));
   };
 
   const selectedMenuLocalEdgeBranches = useMemo(
@@ -1648,6 +1665,7 @@ export function FlowEditorPage() {
               onConfigReplace={handleConfigReplace}
               onEdgeConditionChange={handleEdgeConditionChange}
               onMenuBranchToggle={handleMenuBranchToggle}
+              onCallerMatchRulesChange={handleCallerMatchRulesChange}
               onOpenSubmenuAction={handleOpenOrCreateSubmenu}
               onRenameSubmenu={handleRenameSubmenu}
               menuExtra={{ selectedMenuLocalEdgeBranches, selectedMenuBranchFlows }}

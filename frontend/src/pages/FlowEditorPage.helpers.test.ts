@@ -11,6 +11,7 @@ import {
   renameSubmenuFlowReferences,
   validateFlowBeforeSave,
   validateFlowTimeoutConfig,
+  validateNodeConfigurations,
 } from './FlowEditorPage.helpers';
 import type { Node, Edge } from 'reactflow';
 import type { FlowDetail, FlowNodeData } from '../types';
@@ -737,5 +738,70 @@ describe('renameSubmenuFlowReferences', () => {
     expect(renamedFlows['1']).toEqual({ flowId: 1686, name: 'sales_menu' });
     expect(renamedFlows['2']).toEqual({ flowId: 1700, name: 'Support submenu' });
     expect(result[1]).toBe(nodes[1]);
+  });
+});
+
+describe('caller_match save validation', () => {
+  const validRules = [{ branch: 'vip', label: 'VIP', match: 'exact', value: '+31612345678' }];
+
+  function makeCallerMatchNode(rules: unknown): Node<FlowNodeData> {
+    return { ...makeNode('cm1', 'caller_match'), data: { label: 'Caller match', type: 'caller_match', config: { rules } } };
+  }
+
+  function makeBranchEdge(branch: string): Edge {
+    return {
+      id: `cm1-next-${branch}`,
+      source: 'cm1',
+      target: 'next',
+      sourceHandle: branch,
+      data: { branchKey: branch, condition: branch, sourceNodeType: 'caller_match' },
+    };
+  }
+
+  it('refuses to save without a route for the default branch', async () => {
+    const nodes = [startNode, makeCallerMatchNode(validRules), nextNode];
+    const edges = [makeEdge('start', 'cm1'), makeBranchEdge('vip')];
+    expect(await validateFlowBeforeSave(nodes, edges)).toMatch(/default branch/i);
+  });
+
+  it('saves when the default branch has a route', async () => {
+    const nodes = [startNode, makeCallerMatchNode(validRules), nextNode];
+    const edges = [makeEdge('start', 'cm1'), makeBranchEdge('vip'), makeBranchEdge('default')];
+    expect(await validateFlowBeforeSave(nodes, edges)).toBeNull();
+  });
+
+  it('flags a node without rules', () => {
+    const issues = validateNodeConfigurations([makeCallerMatchNode([])], []);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].issues).toEqual(['at least one rule is required']);
+  });
+
+  it('flags a rule without numbers and duplicate branch keys', () => {
+    const issues = validateNodeConfigurations(
+      [makeCallerMatchNode([
+        { branch: 'a', label: '', match: 'prefix', value: '' },
+        { branch: 'a', label: '', match: 'anonymous', value: '' },
+      ])],
+      [],
+    );
+    expect(issues[0].issues).toEqual([
+      'rule 1: branch key must be unique',
+      'rule 1: at least one number is required',
+      'rule 2: branch key must be unique',
+    ]);
+  });
+
+  it('passes valid rules', () => {
+    expect(validateNodeConfigurations([makeCallerMatchNode(validRules)], [])).toEqual([]);
+  });
+
+  it('restores the sourceHandle of a caller_match edge from its condition', () => {
+    const flow = makeFlow({
+      nodes: [
+        { id: 1, nodeKey: 'cm1', type: 'caller_match', label: 'Match', positionX: 0, positionY: 0, config: {}, groupId: null, subflowId: null },
+      ],
+      edges: [{ id: 1, sourceNodeKey: 'cm1', targetNodeKey: 'next', branchKey: 'vip', condition: 'vip' }],
+    });
+    expect(mapFlowToEdges(flow)[0].sourceHandle).toBe('vip');
   });
 });

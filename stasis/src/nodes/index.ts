@@ -13,6 +13,7 @@ import { fetchTrunkDialFormat } from "../lib/trunkResolver";
 import { executeHunt } from "./hunt.executor";
 import { executeMenu } from "../executors/menu.executor";
 import { executeBusinessHours } from "../executors/business_hours.executor";
+import { executeCallerMatch } from "../executors/caller_match.executor";
 import { executeVoicemail } from "../executors/voicemail.executor";
 import { executeQueueLogin } from "../executors/queue_login.executor";
 import { executeQueue } from "../executors/queue.executor";
@@ -879,6 +880,7 @@ const executorMap: Record<string, NodeExecutor> = {
   get_digits: executeGetDigits,
   menu: executeMenu,
   business_hours: async (_channel, node) => executeBusinessHours(node),
+  caller_match: async (_channel, node, session) => executeCallerMatch(node, session),
   branch: async () => executeBranch(),
   transfer: executeTransfer,
   hunt: executeHunt,
