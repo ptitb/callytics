@@ -185,6 +185,56 @@ describe('hunt executor — additional coverage', () => {
     expect(second.hangup).toHaveBeenCalled();
   });
 
+  it('keeps the hold sound playing between sequential attempts', async () => {
+    const ariClient = createAriClient();
+    const channels = ariClient.channels as typeof ariClient.channels & {
+      startMoh: jest.Mock;
+      stopMoh: jest.Mock;
+    };
+    channels.startMoh = jest.fn().mockResolvedValue(undefined);
+    channels.stopMoh = jest.fn().mockResolvedValue(undefined);
+    const second = { id: 'hunt-2', hangup: jest.fn().mockResolvedValue(undefined) };
+    registerHuntWaiterMock.mockReset();
+    registerHuntWaiterMock
+      .mockImplementationOnce((token: string) => new Promise((resolve) => {
+        huntWaiters.set(token, resolve as (result: { answered: false; reason: 'failed' | 'destroyed' }) => void);
+      }))
+      .mockReturnValueOnce(Promise.resolve({ answered: true, channel: second }));
+
+    const node: FlowNode = {
+      nodeKey: 'hunt-1',
+      type: 'hunt',
+      label: 'Hunt',
+      config: {
+        strategy: 'sequential',
+        destinations: [{ target_type: 'extension', target_value: '2001' }, { target_type: 'extension', target_value: '2002' }],
+        attempt_timeout_ms: 3000,
+        total_timeout_ms: 10000,
+        on_no_answer: 'fallback',
+      },
+    };
+
+    const promise = executeHunt(
+      { id: 'channel-1', hangup: jest.fn().mockResolvedValue(undefined) },
+      node,
+      createSession(),
+      ariClient as any,
+    );
+
+    await flushPromises(20);
+    await jest.advanceTimersByTimeAsync(3500);
+    await flushPromises(20);
+
+    expect(ariClient.channels.originate).toHaveBeenCalledTimes(2);
+    expect(channels.startMoh).toHaveBeenCalledTimes(1);
+    expect(channels.stopMoh).toHaveBeenCalledTimes(1);
+
+    ariClient.emit('StasisEnd', { channel: { id: 'channel-1' } });
+    await jest.advanceTimersByTimeAsync(REPLACEMENT_GRACE_MS);
+    await flushPromises();
+    await expect(promise).resolves.toBe('done');
+  });
+
   it('bridges immediately when outbound leg reaches Stasis', async () => {
     const ariClient = createAriClient();
     const answered = { id: 'hunt-up-1', hangup: jest.fn().mockResolvedValue(undefined) };

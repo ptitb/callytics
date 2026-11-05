@@ -702,11 +702,11 @@ export async function executeHunt(
 
       if (!attemptResult || !attemptResult.channel || attemptResult.status !== 'answered') {
         const attemptChannelId = attemptResult?.attemptChannelId;
-        await stopHold();
         if (attemptChannelId) {
           await hangupAttemptChannel(client, attemptChannelId);
         }
         if (attemptResult?.status === 'hangup' || inboundEnded) {
+          await stopHold();
           return 'hangup';
         }
         logEvent('HuntOriginateFailed', { destination });
@@ -727,7 +727,10 @@ export async function executeHunt(
         return 'hangup';
       }
 
+      // The hold sound keeps playing between attempts so it does not restart for every
+      // destination. Only a busy message interrupts it; the next attempt resumes the hold.
       if (busyMedia) {
+        await stopHold();
         logEvent('HuntBusyMedia', { media: busyMedia });
         await playOnceOnBridge(client, bridgeId, channel.id, busyMedia);
       }
