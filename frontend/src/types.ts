@@ -634,6 +634,10 @@ export type SettingValue = boolean | number | string | null;
 
 export type OutboundWaitAudio = 'ringback' | 'moh';
 
+export type HoldSound = 'moh' | 'audio' | 'none';
+
+export type TransferRingingSound = 'ringback' | 'hold' | 'none';
+
 export interface SystemSettings {
   default_outbound_trunk_id: number | null;
   record_outbound_calls: boolean;
@@ -648,6 +652,9 @@ export interface SystemSettings {
   outbound_min_number_length: number;
   outbound_allowed_short_numbers: string;
   record_internal_calls: boolean;
+  hold_sound: HoldSound;
+  hold_audio_file_id: number | null;
+  transfer_ringing_sound: TransferRingingSound;
 }
 
 export type SettingsPatch = Partial<SystemSettings> & Record<string, SettingValue | undefined>;

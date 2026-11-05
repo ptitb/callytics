@@ -181,6 +181,9 @@ const emptySettings: SystemSettings = {
   outbound_min_number_length: 0,
   outbound_allowed_short_numbers: '112',
   record_internal_calls: false,
+  hold_sound: 'moh',
+  hold_audio_file_id: null,
+  transfer_ringing_sound: 'ringback',
 };
 
 function toForm(item: SipTrunkItem | null): TrunkFormState {

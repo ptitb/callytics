@@ -54,6 +54,13 @@ import {
   resolveInternalHangupReason,
 } from "./lib/internalCall";
 import { waitForPlaybackFinished } from "./lib/playback";
+import { registerCallHold } from "./lib/callHold";
+import { DEFAULT_HOLD_SETTINGS, parseHoldSettings, type HoldSettings } from "./lib/holdSound";
+import {
+  startTransferRinging,
+  type TransferRinging,
+  type TransferRingingClient,
+} from "./lib/transferRinging";
 import { resolveStasisChannel } from "./lib/ariChannel";
 import {
   followCallLegReplacement,
@@ -270,6 +277,10 @@ interface DirectOutboundActiveCall {
     startedAt: Date;
     endedAt: Date | null;
   } | null;
+  /** ARI channel name of the extension's channel; a Local ;2 half marks a blind transfer target. */
+  channelName?: string;
+  /** Sound for the caller of a phone transfer while the target rings. */
+  transferRinging: TransferRinging | null;
   cleanupStarted: boolean;
 }
 
@@ -387,7 +398,8 @@ async function resolveInboundRoute(
   };
 }
 
-async function fetchDirectOutboundSettings(): Promise<DirectOutboundSettingsResponse> {
+/** Reads the flat settings object of the backend. */
+async function fetchBackendSettings(): Promise<Record<string, unknown>> {
   const response = await fetch(`${BACKEND_URL}/settings`);
   if (!response.ok) {
     const body = await response.text();
@@ -398,7 +410,11 @@ async function fetchDirectOutboundSettings(): Promise<DirectOutboundSettingsResp
   const payload = (await response.json()) as Record<string, unknown> & {
     data?: Record<string, unknown>;
   };
-  const settings = payload.data ?? payload;
+  return payload.data ?? payload;
+}
+
+async function fetchDirectOutboundSettings(): Promise<DirectOutboundSettingsResponse> {
+  const settings = await fetchBackendSettings();
   return {
     default_outbound_trunk_id: typeof settings.default_outbound_trunk_id === "number"
       ? settings.default_outbound_trunk_id
@@ -408,6 +424,20 @@ async function fetchDirectOutboundSettings(): Promise<DirectOutboundSettingsResp
     numberSettings: parseOutboundNumberSettings(settings),
     waitAudio: parseOutboundWaitAudio(settings),
   };
+}
+
+/** Hold and transfer ringing sounds. Falls back to the defaults so a settings failure never silences a call more than needed. */
+async function loadHoldSettings(): Promise<HoldSettings> {
+  try {
+    const settings = await fetchBackendSettings();
+    const holdAudioMedia = settings.hold_sound === "audio"
+      ? await resolveAudioMediaPath(settings, "hold_audio_file_id", "")
+      : null;
+    return parseHoldSettings(settings, holdAudioMedia ? `sound:${holdAudioMedia}` : null);
+  } catch (error) {
+    stasisLogger.error("[hold] settings lookup failed:", error);
+    return DEFAULT_HOLD_SETTINGS;
+  }
 }
 
 async function fetchDefaultOutboundTrunk(): Promise<DirectOutboundTrunkResponse | null> {
@@ -588,6 +618,7 @@ async function cleanupDirectOutboundCall(
   untrackDirectOutboundCall(call);
 
   await stopOutboundWaitAudio(ariClient.channels, call.inboundChannelId, call.waitAudio);
+  await call.transferRinging?.stop();
 
   if (call.recording && !call.recording.endedAt) {
     call.recording.endedAt = endedAt;
@@ -634,6 +665,7 @@ function createDirectCall(params: {
   destination: string;
   record: boolean;
   waitAudio: OutboundWaitAudio;
+  channelName?: string;
 }): DirectOutboundActiveCall {
   const call: DirectOutboundActiveCall = {
     callId: params.channelId,
@@ -649,6 +681,8 @@ function createDirectCall(params: {
     record: params.record,
     waitAudio: params.waitAudio,
     recording: null,
+    channelName: params.channelName,
+    transferRinging: null,
     cleanupStarted: false,
   };
   trackDirectOutboundCallChannel(call, call.inboundChannelId);
@@ -669,6 +703,13 @@ async function startDirectCall(ariClientRaw: unknown, call: DirectOutboundActive
   } catch (error) {
     stasisLogger.error(`[${call.direction}-call] ${call.waitAudio} start failed:`, error);
   }
+
+  // A blind transfer from a phone: the caller on the other side of the Local pair hears the ringing sound.
+  call.transferRinging = startTransferRinging(
+    ariClientRaw as unknown as TransferRingingClient,
+    call.channelName,
+    loadHoldSettings,
+  );
 
   await publishDirectOutboundStarted(call).catch((error) => {
     stasisLogger.error(`[${call.direction}-call] publish started failed:`, error);
@@ -739,6 +780,7 @@ async function dialAndBridge(
 
   const ariChannels = (ariClientRaw as DirectOutboundAriClient).channels;
   await stopOutboundWaitAudio(ariChannels, call.inboundChannelId, call.waitAudio);
+  await call.transferRinging?.stop();
   if (call.waitAudio === "ringback") {
     // Ringing leaves the channel unanswered, so answer it now that the other side picked up.
     await ariChannels.answer?.({ channelId: call.inboundChannelId }).catch((error: unknown) => {
@@ -773,6 +815,7 @@ async function handleDirectOutboundDial(
   ariClientRaw: unknown,
   event: {
     channel?: {
+      name?: string;
       caller?: { number?: string };
       dialplan?: { exten?: string };
     };
@@ -849,6 +892,7 @@ async function handleDirectOutboundDial(
     destination,
     record: settings.record_outbound_calls,
     waitAudio: settings.waitAudio,
+    channelName: event.channel?.name,
   });
   await startDirectCall(ariClientRaw, call);
 
@@ -876,6 +920,7 @@ async function handleInternalCall(
   ariClientRaw: unknown,
   event: {
     channel?: {
+      name?: string;
       caller?: { number?: string };
     };
   },
@@ -904,6 +949,7 @@ async function handleInternalCall(
     destination: target,
     record: settings.record_internal_calls,
     waitAudio: settings.waitAudio,
+    channelName: event.channel?.name,
   });
 
   if (target === callerNumber) {
@@ -1672,6 +1718,11 @@ async function start(): Promise<void> {
     );
     client.on("BridgeBlindTransfer", (event: BridgeBlindTransferEvent) =>
       onPhoneTransfer(parseBlindTransfer(event)),
+    );
+
+    registerCallHold(
+      client as unknown as Parameters<typeof registerCallHold>[0],
+      loadHoldSettings,
     );
 
     client.on(

@@ -8,11 +8,16 @@ import * as api from '../lib/api';
 vi.mock('../lib/api', () => ({
   getSettings: vi.fn(),
   updateSettings: vi.fn(),
+  listAllAudio: vi.fn(),
 }));
 
 describe('SettingsPage coverage boost', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.mocked(api.listAllAudio).mockResolvedValue({
+      data: [{ id: 9, name: 'Waiting music', previewUrl: null, originalUrl: null } as never],
+      meta: { total: 1, page: 1, limit: 1000 },
+    } as never);
     vi.mocked(api.getSettings).mockResolvedValue({
       default_outbound_trunk_id: null,
       record_outbound_calls: false,
@@ -27,6 +32,9 @@ describe('SettingsPage coverage boost', () => {
       outbound_min_number_length: 0,
       outbound_allowed_short_numbers: '112',
       record_internal_calls: false,
+      hold_sound: 'moh',
+      hold_audio_file_id: null,
+      transfer_ringing_sound: 'ringback',
     });
     vi.mocked(api.updateSettings).mockResolvedValue({
       default_outbound_trunk_id: null,
@@ -42,6 +50,9 @@ describe('SettingsPage coverage boost', () => {
       outbound_min_number_length: 0,
       outbound_allowed_short_numbers: '112',
       record_internal_calls: false,
+      hold_sound: 'moh',
+      hold_audio_file_id: null,
+      transfer_ringing_sound: 'ringback',
     });
   });
 
@@ -105,6 +116,56 @@ describe('SettingsPage coverage boost', () => {
       outbound_allowed_short_numbers: '112, 911',
       record_internal_calls: true,
     }));
+  });
+
+  it('renders the hold and transfer section with the loaded values', async () => {
+    vi.mocked(api.getSettings).mockResolvedValue({
+      ...(await api.getSettings()),
+      hold_sound: 'audio',
+      hold_audio_file_id: 9,
+      transfer_ringing_sound: 'hold',
+    });
+    renderWithRouter(<SettingsPage />);
+
+    await screen.findByRole('heading', { name: 'Hold and transfer' });
+    expect(screen.getByLabelText('Hold sound')).toHaveValue('audio');
+    expect(screen.getByLabelText('Sound while a transfer rings')).toHaveValue('hold');
+    expect(screen.getByText('Waiting music')).toBeInTheDocument();
+  });
+
+  it('hides the audio picker unless the hold sound is an audio file', async () => {
+    renderWithRouter(<SettingsPage />);
+    await screen.findByRole('heading', { name: 'Hold and transfer' });
+    expect(screen.queryByText('Hold audio file')).not.toBeInTheDocument();
+
+    fireEvent.change(screen.getByLabelText('Hold sound'), { target: { value: 'audio' } });
+    expect(screen.getByText('Hold audio file')).toBeInTheDocument();
+  });
+
+  it('saves the hold and transfer settings', async () => {
+    renderWithRouter(<SettingsPage />);
+    await screen.findByRole('heading', { name: 'Hold and transfer' });
+
+    fireEvent.change(screen.getByLabelText('Hold sound'), { target: { value: 'none' } });
+    fireEvent.change(screen.getByLabelText('Sound while a transfer rings'), { target: { value: 'hold' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'save' })[3]);
+
+    await waitFor(() => expect(api.updateSettings).toHaveBeenCalledWith({
+      hold_sound: 'none',
+      hold_audio_file_id: null,
+      transfer_ringing_sound: 'hold',
+    }));
+  });
+
+  it('does not save an audio hold sound without a file', async () => {
+    renderWithRouter(<SettingsPage />);
+    await screen.findByRole('heading', { name: 'Hold and transfer' });
+
+    fireEvent.change(screen.getByLabelText('Hold sound'), { target: { value: 'audio' } });
+    fireEvent.click(screen.getAllByRole('button', { name: 'save' })[3]);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Select an audio file for the hold sound');
+    expect(api.updateSettings).not.toHaveBeenCalled();
   });
 
   it('does not save an invalid minimum length or short number list', async () => {

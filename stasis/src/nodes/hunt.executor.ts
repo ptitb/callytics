@@ -4,7 +4,8 @@ import { resolveAudioMediaPath } from '../audioResolver';
 import { FlowNode } from '../flowLoader';
 import { registerHuntWaiter, rejectHuntWaiter } from '../huntManager';
 import { logEvent } from '../logger';
-import { isHangupError, waitForPlaybackFinished } from '../lib/playback';
+import { waitForPlaybackFinished } from '../lib/playback';
+import { startMediaLoop } from '../lib/holdSound';
 import { beginNodeRecording, persistSessionRecording } from '../bridgeRecording';
 import { formatDialNumber } from '../lib/formatDialNumber';
 import { fetchTrunkDialFormat } from '../lib/trunkResolver';
@@ -72,51 +73,14 @@ async function playBridgeMedia(ariClient: AriLike, bridgeId: string, media: stri
   });
 }
 
-async function stopPlayback(playback: { stop?: () => Promise<void> } | null): Promise<void> {
-  if (!playback?.stop) {
-    return;
-  }
-
-  await Promise.race([
-    playback.stop().catch(() => undefined),
-    new Promise<void>((resolve) => setTimeout(resolve, 250)),
-  ]);
-}
-
 function startHoldLoop(
   ariClient: AriLike,
   bridgeId: string,
   inboundChannelId: string,
   media: string,
 ): HoldLoopController {
-  let active = true;
-  let currentPlayback: { id: string; stop?: () => Promise<void> } | null = null;
-
-  const loop = async () => {
-    while (active) {
-      const playback = ariClient.Playback();
-      currentPlayback = playback;
-      try {
-        await playBridgeMedia(ariClient, bridgeId, media, playback.id);
-        await waitForPlaybackFinished(ariClient, playback.id, inboundChannelId);
-      } catch (error) {
-        // Stop when the hold loop was stopped or the caller is gone; otherwise a
-        // failing playback would restart immediately and spin.
-        if (!active || isHangupError(error)) {
-          break;
-        }
-      }
-    }
-  };
-
-  void loop();
-
-  return {
-    stop: async () => {
-      active = false;
-      await stopPlayback(currentPlayback);
-    },
-  };
+  return startMediaLoop(ariClient, inboundChannelId, media, (mediaUri, playbackId) =>
+    playBridgeMedia(ariClient, bridgeId, mediaUri, playbackId));
 }
 
 async function playOnceOnBridge(

@@ -148,7 +148,57 @@ describe('SettingsService outbound dialing settings', () => {
       outbound_min_number_length: '0',
       outbound_allowed_short_numbers: '112',
       record_internal_calls: 'false',
+      hold_sound: 'moh',
+      transfer_ringing_sound: 'ringback',
     });
+  });
+
+  it('reads the hold settings with the right types and falls back for bad values', async () => {
+    settingsRepository.find.mockResolvedValue([
+      { key: 'hold_sound', value: 'audio' },
+      { key: 'hold_audio_file_id', value: '12' },
+      { key: 'transfer_ringing_sound', value: 'hold' },
+    ]);
+    await expect(service.getAll()).resolves.toEqual({
+      hold_sound: 'audio',
+      hold_audio_file_id: 12,
+      transfer_ringing_sound: 'hold',
+    });
+    settingsRepository.find.mockResolvedValue([
+      { key: 'hold_sound', value: 'beep' },
+      { key: 'hold_audio_file_id', value: 'abc' },
+      { key: 'transfer_ringing_sound', value: '' },
+    ]);
+    await expect(service.getAll()).resolves.toEqual({
+      hold_sound: 'moh',
+      hold_audio_file_id: null,
+      transfer_ringing_sound: 'ringback',
+    });
+  });
+
+  it('saves the hold settings', async () => {
+    await service.updateMany({ hold_sound: 'audio', hold_audio_file_id: 12, transfer_ringing_sound: 'none' });
+    const saved = settingsRepository.save.mock.calls.map(([row]: [{ key: string; value: string }]) => [row.key, row.value]);
+    expect(saved).toEqual(expect.arrayContaining([
+      ['hold_sound', 'audio'],
+      ['hold_audio_file_id', '12'],
+      ['transfer_ringing_sound', 'none'],
+    ]));
+  });
+
+  it('requires an audio file when the hold sound is audio', async () => {
+    await expect(service.updateMany({ hold_sound: 'audio' })).rejects.toThrow(
+      'hold_audio_file_id is required when hold_sound is audio',
+    );
+    await expect(service.updateMany({ hold_sound: 'audio', hold_audio_file_id: null })).rejects.toThrow(
+      BadRequestException,
+    );
+  });
+
+  it('accepts clearing the audio file when the hold sound is not audio', async () => {
+    await service.updateMany({ hold_sound: 'moh', hold_audio_file_id: null });
+    const saved = settingsRepository.save.mock.calls.map(([row]: [{ key: string; value: string | null }]) => [row.key, row.value]);
+    expect(saved).toEqual(expect.arrayContaining([['hold_audio_file_id', null]]));
   });
 
   it('reads stored outbound settings with the right types', async () => {
@@ -266,6 +316,13 @@ describe('SettingsService outbound dialing settings', () => {
     ['outbound_allowed_short_numbers', null],
     ['record_internal_calls', 'yes'],
     ['record_internal_calls', null],
+    ['hold_sound', 'music'],
+    ['hold_sound', null],
+    ['hold_audio_file_id', 0],
+    ['hold_audio_file_id', 1.5],
+    ['hold_audio_file_id', '3'],
+    ['transfer_ringing_sound', 'beep'],
+    ['transfer_ringing_sound', null],
   ])('rejects %s = %p', async (key, value) => {
     await expect(service.updateMany({ [key]: value as never })).rejects.toThrow(BadRequestException);
   });

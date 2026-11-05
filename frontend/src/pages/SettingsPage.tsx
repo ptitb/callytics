@@ -4,7 +4,8 @@ import { Loading } from '../components/common/Loading';
 import { PageLayout } from '../components/common/PageLayout';
 import { DesktopRequired } from '../components/DesktopRequired/DesktopRequired';
 import { useWindowWidth } from '../hooks/useWindowWidth';
-import { getSettings, updateSettings } from '../lib/api';
+import { getSettings, listAllAudio, updateSettings } from '../lib/api';
+import { getMediaBaseUrl } from '../lib/backendBaseUrl';
 import { getApiError } from '../lib/apiError';
 import {
   validateOutboundAllowedShortNumbers,
@@ -13,7 +14,9 @@ import {
   validateOutboundMinNumberLength,
   validateRtpRange,
 } from '../lib/validation';
-import type { OutboundWaitAudio } from '../types';
+import { AudioPreviewPlayer } from '../components/audio/AudioPreviewPlayer';
+import { SearchableSelect } from '../components/common/SearchableSelect';
+import type { AudioFileItem, HoldSound, OutboundWaitAudio, TransferRingingSound } from '../types';
 import { useToast } from '../context/ToastContext';
 import styles from './SettingsPage.module.css';
 
@@ -38,6 +41,12 @@ export function SettingsPage() {
   const [recordInternalCalls, setRecordInternalCalls] = useState(false);
   const [outboundSaveState, setOutboundSaveState] = useState<SaveState>('idle');
   const [outboundError, setOutboundError] = useState<string | null>(null);
+  const [holdSound, setHoldSound] = useState<HoldSound>('moh');
+  const [holdAudioFileId, setHoldAudioFileId] = useState<number | null>(null);
+  const [transferRingingSound, setTransferRingingSound] = useState<TransferRingingSound>('ringback');
+  const [audioItems, setAudioItems] = useState<AudioFileItem[]>([]);
+  const [holdSaveState, setHoldSaveState] = useState<SaveState>('idle');
+  const [holdError, setHoldError] = useState<string | null>(null);
   const [initialLoading, setInitialLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [saveState, setSaveState] = useState<SaveState>('idle');
@@ -58,6 +67,9 @@ export function SettingsPage() {
         setMinNumberLength(String(settings.outbound_min_number_length ?? 0));
         setAllowedShortNumbers(settings.outbound_allowed_short_numbers ?? '112');
         setRecordInternalCalls(settings.record_internal_calls ?? false);
+        setHoldSound(settings.hold_sound ?? 'moh');
+        setHoldAudioFileId(settings.hold_audio_file_id ?? null);
+        setTransferRingingSound(settings.transfer_ringing_sound ?? 'ringback');
       } catch (error) {
         setLoadError(getApiError(error, 'failed to load settings'));
       } finally {
@@ -65,7 +77,18 @@ export function SettingsPage() {
       }
     };
 
+    // The audio list only feeds the hold audio picker, so a failure must not block the page.
+    const loadAudio = async () => {
+      try {
+        const audio = await listAllAudio();
+        setAudioItems(audio.data);
+      } catch {
+        setAudioItems([]);
+      }
+    };
+
     void loadSettings();
+    void loadAudio();
 
     return () => {
       if (saveTimerRef.current) {
@@ -162,6 +185,32 @@ export function SettingsPage() {
     }
   };
 
+  const handleSaveHold = async () => {
+    setHoldError(null);
+    if (holdSound === 'audio' && holdAudioFileId === null) {
+      setHoldSaveState('failed');
+      setHoldError('Select an audio file for the hold sound');
+      return;
+    }
+
+    setHoldSaveState('saving');
+    try {
+      const settings = await updateSettings({
+        hold_sound: holdSound,
+        hold_audio_file_id: holdAudioFileId,
+        transfer_ringing_sound: transferRingingSound,
+      });
+      setHoldSound(settings.hold_sound ?? holdSound);
+      setHoldAudioFileId(settings.hold_audio_file_id ?? holdAudioFileId);
+      setTransferRingingSound(settings.transfer_ringing_sound ?? transferRingingSound);
+      setHoldSaveState('saved');
+      window.setTimeout(() => setHoldSaveState('idle'), 2000);
+    } catch (error) {
+      setHoldSaveState('failed');
+      setHoldError(getApiError(error, 'failed to save hold and transfer settings'));
+    }
+  };
+
   if (windowWidth < 768) {
     return <DesktopRequired />;
   }
@@ -181,6 +230,10 @@ export function SettingsPage() {
       </PageLayout>
     );
   }
+
+  const audioOptions = audioItems.map((item) => ({ value: String(item.id), label: item.name }));
+  const holdAudioItem = audioItems.find((item) => item.id === holdAudioFileId);
+  const holdAudioPreviewPath = holdAudioItem?.previewUrl || holdAudioItem?.originalUrl;
 
   const saveLabel = saveState === 'saving'
     ? 'saving…'
@@ -377,6 +430,75 @@ export function SettingsPage() {
               type="button"
             >
               {outboundSaveState === 'saving' ? 'saving…' : outboundSaveState === 'saved' ? 'saved ✓' : outboundSaveState === 'failed' ? 'failed' : 'save'}
+            </button>
+          </div>
+        </section>
+
+        <section className={styles.card}>
+          <div className={styles.cardHeader}>
+            <h2 className={styles.cardTitle}>Hold and transfer</h2>
+          </div>
+          <div className={styles.formField}>
+            <label className={styles.label} htmlFor="hold-sound">Hold sound</label>
+            <select
+              className={styles.input}
+              disabled={holdSaveState === 'saving'}
+              id="hold-sound"
+              onChange={(event) => setHoldSound(event.target.value as HoldSound)}
+              value={holdSound}
+            >
+              <option value="moh">Music on hold</option>
+              <option value="audio">Audio file</option>
+              <option value="none">Silence</option>
+            </select>
+            <p className={styles.note}>
+              What the caller hears while an extension puts the call on hold, for example during an attended transfer.
+              Music on hold is the Asterisk default.
+            </p>
+            {holdSound === 'audio' ? (
+              <>
+                <span className={styles.label}>Hold audio file</span>
+                <SearchableSelect
+                  disabled={holdSaveState === 'saving'}
+                  onChange={(value) => setHoldAudioFileId(value ? Number(value) : null)}
+                  options={audioOptions}
+                  placeholder="select audio file…"
+                  value={holdAudioFileId ? String(holdAudioFileId) : null}
+                />
+                {holdAudioPreviewPath && holdAudioPreviewPath.trim() ? (
+                  <AudioPreviewPlayer key={holdAudioItem?.id} src={`${getMediaBaseUrl()}${holdAudioPreviewPath}`} />
+                ) : null}
+                <p className={styles.note}>
+                  The file is played in a loop. Without a ready file the caller hears music on hold.
+                </p>
+              </>
+            ) : null}
+            <label className={styles.label} htmlFor="transfer-ringing-sound">Sound while a transfer rings</label>
+            <select
+              className={styles.input}
+              disabled={holdSaveState === 'saving'}
+              id="transfer-ringing-sound"
+              onChange={(event) => setTransferRingingSound(event.target.value as TransferRingingSound)}
+              value={transferRingingSound}
+            >
+              <option value="ringback">Ringing tone</option>
+              <option value="hold">Same as hold sound</option>
+              <option value="none">Silence</option>
+            </select>
+            <p className={styles.note}>
+              What the caller hears after an extension transfers the call without announcing it, until the new
+              destination answers.
+            </p>
+            {holdError ? <p className={styles.note} role="alert">{holdError}</p> : null}
+          </div>
+          <div className={styles.actionRow}>
+            <button
+              className={`${styles.primaryButton} ${holdSaveState === 'failed' ? styles.failedButton : ''} btn-press`}
+              disabled={holdSaveState === 'saving'}
+              onClick={() => void handleSaveHold()}
+              type="button"
+            >
+              {holdSaveState === 'saving' ? 'saving…' : holdSaveState === 'saved' ? 'saved ✓' : holdSaveState === 'failed' ? 'failed' : 'save'}
             </button>
           </div>
         </section>

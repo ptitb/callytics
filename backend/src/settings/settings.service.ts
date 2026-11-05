@@ -5,6 +5,12 @@ import { getEnvRtpRange, validateRtpRange } from '../asterisk/rtp-range';
 import { runSqlMigrations } from '../db/run-sql-migrations';
 import { SipTrunkEntity } from '../trunks/entities/sip-trunk.entity';
 import {
+  HOLD_DEFAULTS,
+  validateHoldAudioFileId,
+  validateHoldSound,
+  validateTransferRingingSound,
+} from './hold-sound';
+import {
   OUTBOUND_DEFAULTS,
   validateOutboundAllowedShortNumbers,
   validateOutboundCountryCode,
@@ -19,6 +25,7 @@ export type SettingValue = boolean | number | string | null;
 export type SettingsMap = Record<string, SettingValue>;
 
 const RTP_SETTING_KEYS = ['rtp_port_start', 'rtp_port_end'] as const;
+const HOLD_SETTING_KEYS = ['hold_sound', 'hold_audio_file_id'] as const;
 
 function buildSettingDefaults(): SettingsMap {
   const rtpRange = getEnvRtpRange();
@@ -29,6 +36,7 @@ function buildSettingDefaults(): SettingsMap {
     rtp_port_start: rtpRange.start,
     rtp_port_end: rtpRange.end,
     ...OUTBOUND_DEFAULTS,
+    ...HOLD_DEFAULTS,
   };
 }
 
@@ -115,6 +123,9 @@ export class SettingsService implements OnModuleInit {
     if (RTP_SETTING_KEYS.some((key) => key in patch)) {
       await this.validateRtpPatch(patch);
     }
+    if (HOLD_SETTING_KEYS.some((key) => key in patch)) {
+      await this.validateHoldPatch(patch);
+    }
     for (const [key, value] of entries) {
       await this.set(key, value);
     }
@@ -131,6 +142,16 @@ export class SettingsService implements OnModuleInit {
     const message = validateRtpRange({ start, end });
     if (message) {
       throw new BadRequestException(message);
+    }
+  }
+
+  /** The audio hold sound needs a file; the other keys are validated one by one in set(). */
+  private async validateHoldPatch(patch: Record<string, SettingValue>): Promise<void> {
+    const current = await this.getAll();
+    const sound = 'hold_sound' in patch ? patch.hold_sound : current.hold_sound ?? HOLD_DEFAULTS.hold_sound;
+    const fileId = 'hold_audio_file_id' in patch ? patch.hold_audio_file_id : current.hold_audio_file_id ?? null;
+    if (sound === 'audio' && (fileId === null || fileId === undefined || fileId === '')) {
+      throw new BadRequestException('hold_audio_file_id is required when hold_sound is audio');
     }
   }
 
@@ -258,6 +279,22 @@ export class SettingsService implements OnModuleInit {
       return String(value).split(',').map((entry) => entry.trim()).filter((entry) => entry !== '').join(',');
     }
 
+    if (key === 'hold_sound' || key === 'transfer_ringing_sound') {
+      const message = key === 'hold_sound' ? validateHoldSound(value) : validateTransferRingingSound(value);
+      if (message) {
+        throw new BadRequestException(message);
+      }
+      return this.serializeValue(value);
+    }
+
+    if (key === 'hold_audio_file_id') {
+      const message = validateHoldAudioFileId(value);
+      if (message) {
+        throw new BadRequestException(message);
+      }
+      return this.serializeValue(value);
+    }
+
     if (value !== null && typeof value !== 'string' && typeof value !== 'number' && typeof value !== 'boolean') {
       throw new BadRequestException(`unsupported value type for setting ${key}`);
     }
@@ -316,6 +353,19 @@ export class SettingsService implements OnModuleInit {
         return OUTBOUND_DEFAULTS[key];
       }
       return validateOutboundAllowedShortNumbers(value) ? OUTBOUND_DEFAULTS[key] : value;
+    }
+
+    if (key === 'hold_sound') {
+      return validateHoldSound(value) ? HOLD_DEFAULTS[key] : value;
+    }
+
+    if (key === 'transfer_ringing_sound') {
+      return validateTransferRingingSound(value) ? HOLD_DEFAULTS[key] : value;
+    }
+
+    if (key === 'hold_audio_file_id') {
+      const parsed = Number(value ?? '');
+      return value !== null && Number.isInteger(parsed) && parsed > 0 ? parsed : null;
     }
 
     return value;
